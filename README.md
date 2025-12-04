@@ -6,16 +6,19 @@ An interactive 3D visualization featuring particle-based network structures that
 
 ### Visual Elements
 - **Black 3D Space**: Empty void with no background distractions
-- **Particle Networks**: 30 unique net-like structures composed of interconnected points and lines
-- **Varying Properties**: Each network has different size, spacing, and density
-- **Cyan Wireframe**: Semi-transparent connections creating ethereal mesh structures
+- **Particle Networks**: 40 unique net-like structures composed of interconnected points and lines
+- **Varying Shapes**: Six distinct geometric forms - spheres, elongated ellipsoids, flat discs, tubes, clusters, and irregular shapes
+- **Varying Properties**: Each network has different size, spacing, density, and color
+- **Color Palette**: Multiple shades of cyan and blue with varied opacity for depth
+- **Dynamic Wireframe**: Semi-transparent connections creating ethereal mesh structures
 
 ### Idle Behavior
 When no interaction is occurring, all particle networks exhibit:
-- **Gentle Drifting**: Smooth positional movement through space
-- **Slow Oscillation**: Sinusoidal motion patterns
-- **Subtle Rotation**: Continuous rotation on all axes
-- **Mesh Deformation**: Organic wave-like surface deformations
+- **Gentle Drifting**: Multi-layered smooth positional movement with organic flow
+- **Slow Oscillation**: Sinusoidal motion patterns at varying frequencies
+- **Subtle Rotation**: Continuous rotation with easing for natural movement
+- **Mesh Deformation**: Multiple wave layers creating flowing, organic surface deformations
+- **Smooth Interpolation**: All movements use easing functions for fluid transitions
 
 ### Wind Interaction
 Control wind forces using arrow keys:
@@ -25,18 +28,20 @@ Control wind forces using arrow keys:
 - **→ Right Arrow**: Wind from left to right
 
 #### Wind Effects
-- Force field applied across entire 3D space
-- All particles respond simultaneously
-- Movement shifts in wind direction
-- Mesh surfaces stretch and bend
-- Local turbulence creates secondary motion
-- Trailing regions exhibit folding behavior
+- Smooth force field applied across entire 3D space with gradual transitions
+- All particles respond simultaneously with individual turbulence
+- Gentle movement shifts in wind direction
+- Mesh surfaces stretch and bend with fluid deformation
+- Multi-layered turbulence creates natural, flowing secondary motion
+- Trailing regions exhibit organic folding and wave behavior
+- Wind accumulator provides smooth acceleration and deceleration
 
 #### Recovery
 - Release arrow keys to stop wind
-- Particles gradually return to original shapes
-- Smooth interpolation back to idle state
-- Physics-based damping for natural movement
+- Particles gradually return to original shapes with ease-out easing
+- Smooth interpolation back to idle state over time
+- Physics-based damping with gradual velocity decay
+- Wind accumulator smoothly dissipates for natural transitions
 
 ## Technical Implementation
 
@@ -89,7 +94,7 @@ Multiple keys can be pressed simultaneously to create diagonal wind directions.
 ### Adjust Number of Particles
 In `main.js`, modify:
 ```javascript
-const numNets = 30; // Change this value
+const numNets = 40; // Change this value
 ```
 
 ### Modify Wind Strength
@@ -101,12 +106,27 @@ windState.targetStrength = 1.0; // Increase for stronger wind
 ### Change Colors
 In `ParticleNet.createMesh()`:
 ```javascript
-color: 0x00ffff, // Hex color code
+const colors = [0x00ffff, 0x00ccff, 0x0099ff, 0x00ffcc, 0x33ffff];
+```
+
+### Adjust Shape Distribution
+In `main.js`, modify:
+```javascript
+const shapeTypes = ['sphere', 'elongated', 'flat', 'tube', 'cluster', 'irregular'];
+```
+
+### Fine-tune Movement Smoothness
+Adjust oscillation speeds and amplitudes in the `ParticleNet` constructor:
+```javascript
+this.oscillationSpeed = 0.15 + Math.random() * 0.25; // Lower = slower
+this.oscillationAmplitude = 1.5 + Math.random() * 2.5; // Drift distance
 ```
 
 ## Performance
 
-- Optimized for 30 particle networks
-- Each network contains 50-150 vertices
+- Optimized for 40 particle networks with varied shapes
+- Each network contains 60-200 vertices depending on shape complexity
 - Runs at 60fps on modern hardware
 - GPU-accelerated rendering via WebGL
+- Smooth interpolation and easing for fluid motion
+- Delta time capping prevents performance spikes
