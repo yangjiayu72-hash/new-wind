@@ -1,6 +1,6 @@
 # 3D Particle Network System
 
-An interactive 3D visualization featuring particle-based network structures that respond to wind forces controlled by keyboard input.
+An interactive 3D visualization featuring particle-based network structures that respond to wind forces, mouse interactions, and touch gestures. Experience fluid, organic motion as particles drift, flow, and react to your every movement.
 
 ## Features
 
@@ -20,12 +20,39 @@ When no interaction is occurring, all particle networks exhibit:
 - **Mesh Deformation**: Multiple wave layers creating flowing, organic surface deformations
 - **Smooth Interpolation**: All movements use easing functions for fluid transitions
 
-### Wind Interaction
+### Interactive Controls
+
+#### Keyboard Wind Control
 Control wind forces using arrow keys:
 - **↑ Up Arrow**: Wind from bottom to top
 - **↓ Down Arrow**: Wind from top to bottom
 - **← Left Arrow**: Wind from right to left
 - **→ Right Arrow**: Wind from left to right
+- Multiple keys can be pressed simultaneously for diagonal wind
+
+#### Mouse Interactions
+- **Mouse Movement**: Particles are gently attracted to your cursor
+  - Creates smooth, flowing movement toward mouse position
+  - Influence radius: ~25 units with distance-based falloff
+  - Individual vertices respond with organic deformation
+- **Mouse Hover**: Particles near cursor glow and brighten
+  - Opacity increases based on proximity
+  - Subtle color shift to brighter cyan
+  - Smooth fade transitions
+- **Click**: Creates an explosive burst effect
+  - Pushes particles away from click point
+  - Burst radius: ~25 units
+  - Strength: 2.0 force units
+- **Click + Drag**: Creates a stronger swirling burst
+  - Enhanced burst radius: ~35 units
+  - Increased strength: 3.0 force units
+  - Perfect for creating dramatic effects
+
+#### Touch Support (Mobile/Tablet)
+- **Touch Move**: Same as mouse movement - attracts particles
+- **Tap**: Creates burst effect like mouse click
+- **Touch Drag**: Creates enhanced burst like mouse drag
+- Full touch gesture support for all interactions
 
 #### Wind Effects
 - Smooth force field applied across entire 3D space with gradual transitions
@@ -51,10 +78,12 @@ Control wind forces using arrow keys:
 - **WebGL**: Hardware-accelerated graphics
 
 ### Key Components
-- `ParticleNet` class: Individual network structures
+- `ParticleNet` class: Individual network structures with interactive methods
 - Wind physics system: Force application and deformation
-- Animation loop: 60fps rendering
-- Keyboard event handlers: Real-time input processing
+- Mouse interaction system: Attraction, hover effects, and burst mechanics
+- Touch event handlers: Full mobile device support
+- Animation loop: 60fps rendering with multi-layer interaction
+- Event handlers: Keyboard, mouse, and touch input processing
 
 ## Running the Project
 
@@ -74,6 +103,7 @@ Simply open `index.html` in a modern web browser that supports ES6 modules.
 
 ## Controls
 
+### Keyboard
 | Key | Action |
 |-----|--------|
 | ↑ | Apply upward wind force |
@@ -82,6 +112,21 @@ Simply open `index.html` in a modern web browser that supports ES6 modules.
 | → | Apply rightward wind force |
 
 Multiple keys can be pressed simultaneously to create diagonal wind directions.
+
+### Mouse
+| Action | Effect |
+|--------|--------|
+| Move | Attract particles to cursor with smooth falloff |
+| Hover | Glow and brighten nearby particles |
+| Click | Create explosive burst pushing particles away |
+| Click + Drag | Enhanced burst with larger radius and strength |
+
+### Touch (Mobile/Tablet)
+| Gesture | Effect |
+|---------|--------|
+| Touch Move | Attract particles to touch point |
+| Tap | Create burst effect |
+| Touch Drag | Enhanced burst effect |
 
 ## Browser Requirements
 
@@ -120,6 +165,22 @@ Adjust oscillation speeds and amplitudes in the `ParticleNet` constructor:
 ```javascript
 this.oscillationSpeed = 0.15 + Math.random() * 0.25; // Lower = slower
 this.oscillationAmplitude = 1.5 + Math.random() * 2.5; // Drift distance
+```
+
+### Customize Mouse Interactions
+In the `mouseState` object:
+```javascript
+influenceRadius: 25,        // Distance of mouse attraction
+influenceStrength: 1.5      // Strength of attraction force
+```
+
+In mouse click handler:
+```javascript
+strength: 2.0,              // Normal click burst strength
+radius: 25,                 // Normal click burst radius
+// Drag values
+strength: 3.0,              // Enhanced drag burst strength
+radius: 35                  // Enhanced drag burst radius
 ```
 
 ## Performance

@@ -31,6 +31,19 @@ const windState = {
     }
 };
 
+// Mouse interaction state
+const mouseState = {
+    position: new THREE.Vector2(0, 0),
+    worldPosition: new THREE.Vector3(0, 0, 0),
+    isDown: false,
+    isDragging: false,
+    lastPosition: new THREE.Vector2(0, 0),
+    velocity: new THREE.Vector2(0, 0),
+    clickBursts: [],
+    influenceRadius: 25,
+    influenceStrength: 1.5
+};
+
 // Particle Network Class
 class ParticleNet {
     constructor(position, size, density, shapeType) {
@@ -354,6 +367,109 @@ class ParticleNet {
         const meshLerpAmount = easeOut(deltaTime * recoverySpeed * 0.8);
         this.mesh.position.lerp(this.basePosition, meshLerpAmount);
     }
+
+    applyMouseInfluence(mouseWorldPos, influenceRadius, influenceStrength, deltaTime) {
+        // Calculate distance from mouse to particle net center
+        const distToMouse = this.mesh.position.distanceTo(mouseWorldPos);
+
+        if (distToMouse < influenceRadius * 2) {
+            // Direction from particle to mouse
+            const directionToMouse = new THREE.Vector3()
+                .subVectors(mouseWorldPos, this.mesh.position)
+                .normalize();
+
+            // Influence strength falls off with distance
+            const falloff = Math.max(0, 1 - distToMouse / (influenceRadius * 2));
+            const force = directionToMouse.multiplyScalar(falloff * influenceStrength * deltaTime * 3);
+
+            // Apply subtle attraction to mesh
+            this.mesh.position.add(force);
+
+            // Apply to individual vertices with variation
+            const positions = this.geometry.attributes.position;
+            for (let i = 0; i < positions.count; i++) {
+                const pos = new THREE.Vector3(
+                    positions.getX(i),
+                    positions.getY(i),
+                    positions.getZ(i)
+                );
+
+                const worldPos = pos.clone().applyMatrix4(this.mesh.matrixWorld);
+                const vertexDistToMouse = worldPos.distanceTo(mouseWorldPos);
+
+                if (vertexDistToMouse < influenceRadius) {
+                    const vertexDir = new THREE.Vector3()
+                        .subVectors(mouseWorldPos, worldPos)
+                        .normalize();
+
+                    const vertexFalloff = Math.max(0, 1 - vertexDistToMouse / influenceRadius);
+                    const vertexForce = vertexDir.multiplyScalar(vertexFalloff * influenceStrength * deltaTime * 0.5);
+
+                    this.velocities[i].add(vertexForce);
+                }
+            }
+        }
+    }
+
+    applyClickBurst(burstPos, burstStrength, burstRadius, deltaTime) {
+        const distToBurst = this.mesh.position.distanceTo(burstPos);
+
+        if (distToBurst < burstRadius) {
+            // Direction away from burst
+            const direction = new THREE.Vector3()
+                .subVectors(this.mesh.position, burstPos)
+                .normalize();
+
+            const falloff = Math.max(0, 1 - distToBurst / burstRadius);
+            const force = direction.multiplyScalar(falloff * burstStrength * deltaTime * 15);
+
+            this.mesh.position.add(force);
+
+            // Apply to vertices
+            const positions = this.geometry.attributes.position;
+            for (let i = 0; i < positions.count; i++) {
+                const pos = new THREE.Vector3(
+                    positions.getX(i),
+                    positions.getY(i),
+                    positions.getZ(i)
+                );
+
+                const worldPos = pos.clone().applyMatrix4(this.mesh.matrixWorld);
+                const vertexDistToBurst = worldPos.distanceTo(burstPos);
+
+                if (vertexDistToBurst < burstRadius) {
+                    const vertexDir = new THREE.Vector3()
+                        .subVectors(worldPos, burstPos)
+                        .normalize();
+
+                    const vertexFalloff = Math.max(0, 1 - vertexDistToBurst / burstRadius);
+                    const vertexForce = vertexDir.multiplyScalar(vertexFalloff * burstStrength * 2);
+
+                    this.velocities[i].add(vertexForce);
+                }
+            }
+        }
+    }
+
+    updateHoverEffect(mouseWorldPos, influenceRadius) {
+        const distToMouse = this.mesh.position.distanceTo(mouseWorldPos);
+
+        if (distToMouse < influenceRadius) {
+            const falloff = Math.max(0, 1 - distToMouse / influenceRadius);
+            const targetOpacity = 0.7 + falloff * 0.3;
+            this.material.opacity += (targetOpacity - this.material.opacity) * 0.1;
+
+            // Subtle color shift
+            const hoverColor = new THREE.Color(0x00ffff);
+            const currentColor = new THREE.Color(this.material.color);
+            currentColor.lerp(hoverColor, falloff * 0.3);
+            this.material.color.copy(currentColor);
+        } else {
+            // Return to original opacity
+            const baseOpacity = 0.5 + Math.random() * 0.1;
+            this.material.opacity += (baseOpacity - this.material.opacity) * 0.05;
+        }
+    }
 }
 
 // Create particle networks
@@ -426,6 +542,84 @@ function updateWindDirection() {
     }
 }
 
+// Mouse and touch controls
+function updateMousePosition(clientX, clientY) {
+    // Normalized device coordinates (-1 to +1)
+    mouseState.position.x = (clientX / window.innerWidth) * 2 - 1;
+    mouseState.position.y = -(clientY / window.innerHeight) * 2 + 1;
+
+    // Calculate mouse velocity for drag effects
+    mouseState.velocity.x = mouseState.position.x - mouseState.lastPosition.x;
+    mouseState.velocity.y = mouseState.position.y - mouseState.lastPosition.y;
+    mouseState.lastPosition.copy(mouseState.position);
+
+    // Convert to world coordinates
+    const vector = new THREE.Vector3(mouseState.position.x, mouseState.position.y, 0.5);
+    vector.unproject(camera);
+    const dir = vector.sub(camera.position).normalize();
+    const distance = -camera.position.z / dir.z;
+    mouseState.worldPosition.copy(camera.position).add(dir.multiplyScalar(distance));
+}
+
+document.addEventListener('mousemove', (e) => {
+    updateMousePosition(e.clientX, e.clientY);
+    if (mouseState.isDown) {
+        mouseState.isDragging = true;
+    }
+});
+
+document.addEventListener('mousedown', (e) => {
+    mouseState.isDown = true;
+    updateMousePosition(e.clientX, e.clientY);
+});
+
+document.addEventListener('mouseup', (e) => {
+    if (mouseState.isDown) {
+        // Create click burst effect
+        mouseState.clickBursts.push({
+            position: mouseState.worldPosition.clone(),
+            strength: mouseState.isDragging ? 3.0 : 2.0,
+            radius: mouseState.isDragging ? 35 : 25,
+            life: 1.0
+        });
+    }
+    mouseState.isDown = false;
+    mouseState.isDragging = false;
+});
+
+// Touch support
+document.addEventListener('touchstart', (e) => {
+    if (e.touches.length > 0) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        mouseState.isDown = true;
+        updateMousePosition(touch.clientX, touch.clientY);
+    }
+}, { passive: false });
+
+document.addEventListener('touchmove', (e) => {
+    if (e.touches.length > 0) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        updateMousePosition(touch.clientX, touch.clientY);
+        mouseState.isDragging = true;
+    }
+}, { passive: false });
+
+document.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    if (mouseState.isDown) {
+        mouseState.clickBursts.push({
+            position: mouseState.worldPosition.clone(),
+            strength: mouseState.isDragging ? 3.0 : 2.0,
+            radius: mouseState.isDragging ? 35 : 25,
+            life: 1.0
+        });
+    }
+    mouseState.isDown = false;
+    mouseState.isDragging = false;
+}, { passive: false });
+
 // Animation loop
 const clock = new THREE.Clock();
 
@@ -439,13 +633,36 @@ function animate() {
     const easeInOut = Math.abs(strengthDelta) < 0.5 ? strengthDelta * 0.5 : strengthDelta;
     windState.strength += easeInOut * deltaTime * 2.5;
 
+    // Update click bursts
+    mouseState.clickBursts = mouseState.clickBursts.filter(burst => {
+        burst.life -= deltaTime * 2.0;
+        return burst.life > 0;
+    });
+
     // Update all particle networks
     particleNets.forEach(net => {
+        // Apply keyboard wind
         if (windState.strength > 0.01) {
             net.applyWind(windState.direction, windState.strength, deltaTime);
         } else {
             net.recover(deltaTime);
         }
+
+        // Apply mouse influence (attraction)
+        net.applyMouseInfluence(
+            mouseState.worldPosition,
+            mouseState.influenceRadius,
+            mouseState.influenceStrength,
+            deltaTime
+        );
+
+        // Apply click bursts
+        mouseState.clickBursts.forEach(burst => {
+            net.applyClickBurst(burst.position, burst.strength, burst.radius, deltaTime);
+        });
+
+        // Update hover glow effect
+        net.updateHoverEffect(mouseState.worldPosition, mouseState.influenceRadius);
 
         // Always apply idle animation for continuous organic movement
         if (windState.strength < 0.7) {
