@@ -20,9 +20,14 @@ An interactive 3D visualization featuring particle-based network structures that
 - **Toggle Control**: Easy on/off button with visual feedback
 
 ### Black Hole Mode
-- **Gravitational Singularity**: Create a black hole that follows your mouse cursor
+- **Gravitational Singularity**: Compact, intense black hole that follows your mouse cursor
 - **Realistic Physics**: Inverse square law gravity with spaghettification effects
-- **Visual Representation**: Black core with purple glow and rotating accretion disk
+- **Enhanced Visual Representation**:
+  - Smaller, more concentrated black core
+  - Pulsing inner glow with purple-blue gradient
+  - Animated outer glow ring
+  - 200 spiral particles creating dynamic swirling streams
+  - Rotating accretion disk with multi-layered turbulent flow patterns
 - **Extreme Deformation**: Watch meshes stretch and swirl as they're pulled toward the event horizon
 - **Tidal Forces**: Perpendicular forces create beautiful swirling patterns
 - **Toggle On/Off**: Press B key to activate/deactivate
@@ -134,14 +139,17 @@ When activated (B key), the black hole creates realistic gravitational effects:
 - **Inverse Square Law**: Gravity strength increases dramatically as distance decreases
 - **Spaghettification**: Meshes stretch toward the black hole, with outer vertices stretching more
 - **Tidal Forces**: Perpendicular forces create rotation and swirling motions
-- **Event Horizon**: Extreme deformation within 12 units of the center
-- **Gravity Radius**: Particles affected within 35 units
+- **Event Horizon**: Extreme deformation within 7 units of the center (more compact)
+- **Gravity Radius**: Particles affected within 30 units
 - **Smooth Following**: Black hole smoothly tracks mouse position
-- **Visual Feedback**:
-  - Black core sphere (event horizon)
-  - Purple pulsing glow ring
-  - Rotating accretion disk with orange/yellow spiral patterns
-  - Shader-based animated swirls
+- **Enhanced Visual Feedback**:
+  - Compact black core sphere (radius: 4 units)
+  - Pulsing inner glow sphere with dynamic purple-blue shader
+  - Purple outer glow ring
+  - 200 spiral particles forming swirling streams (additive blending)
+  - Rotating accretion disk with multi-layered turbulent flow
+  - Enhanced shader with dual spiral patterns and bright spots
+  - Faster rotation speeds for more dynamic appearance
 - **Mass Effect**: Both mesh positions and individual vertices are affected
 - **Clamped Forces**: Prevents extreme physics glitches while maintaining drama
 

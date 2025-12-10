@@ -49,13 +49,15 @@ const blackHoleState = {
     active: false,
     position: new THREE.Vector3(0, 0, 0),
     targetPosition: new THREE.Vector3(0, 0, 0),
-    radius: 8,
-    eventHorizonRadius: 12,
-    gravityRadius: 35,
-    gravityStrength: 2.5,
+    radius: 4,
+    eventHorizonRadius: 7,
+    gravityRadius: 30,
+    gravityStrength: 2.8,
     mesh: null,
     accretionDisk: null,
-    glowMesh: null
+    glowMesh: null,
+    innerGlow: null,
+    spiralParticles: null
 };
 
 // Particle Network Class
@@ -723,7 +725,7 @@ for (let i = 0; i < numNets; i++) {
 
 // Create black hole visuals
 function createBlackHole() {
-    // Core black sphere (event horizon)
+    // Core black sphere (event horizon) - smaller and more compact
     const coreGeometry = new THREE.SphereGeometry(blackHoleState.radius, 32, 32);
     const coreMaterial = new THREE.MeshBasicMaterial({
         color: 0x000000,
@@ -734,26 +736,102 @@ function createBlackHole() {
     blackHoleState.mesh.visible = false;
     scene.add(blackHoleState.mesh);
 
-    // Outer glow/distortion ring
+    // Inner glow - bright concentrated layer just outside core
+    const innerGlowGeometry = new THREE.SphereGeometry(blackHoleState.radius * 1.3, 32, 32);
+    const innerGlowMaterial = new THREE.ShaderMaterial({
+        transparent: true,
+        side: THREE.BackSide,
+        depthWrite: false,
+        uniforms: {
+            time: { value: 0 }
+        },
+        vertexShader: `
+            varying vec3 vNormal;
+            void main() {
+                vNormal = normalize(normalMatrix * normal);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float time;
+            varying vec3 vNormal;
+
+            void main() {
+                float intensity = pow(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+
+                // Pulsing effect
+                float pulse = sin(time * 3.0) * 0.2 + 0.8;
+
+                // Purple-blue gradient
+                vec3 color1 = vec3(0.4, 0.0, 0.8);
+                vec3 color2 = vec3(0.6, 0.2, 1.0);
+                vec3 glowColor = mix(color1, color2, pulse);
+
+                gl_FragColor = vec4(glowColor, intensity * 0.7);
+            }
+        `
+    });
+    blackHoleState.innerGlow = new THREE.Mesh(innerGlowGeometry, innerGlowMaterial);
+    blackHoleState.innerGlow.visible = false;
+    scene.add(blackHoleState.innerGlow);
+
+    // Outer glow/distortion ring - more compact
     const glowGeometry = new THREE.RingGeometry(
-        blackHoleState.radius * 1.2,
-        blackHoleState.eventHorizonRadius,
+        blackHoleState.radius * 1.5,
+        blackHoleState.eventHorizonRadius * 0.95,
         64
     );
     const glowMaterial = new THREE.MeshBasicMaterial({
         color: 0x8800ff,
         transparent: true,
-        opacity: 0.3,
+        opacity: 0.25,
         side: THREE.DoubleSide
     });
     blackHoleState.glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
     blackHoleState.glowMesh.visible = false;
     scene.add(blackHoleState.glowMesh);
 
-    // Accretion disk
+    // Create spiral particles for swirling effect
+    const spiralParticleCount = 200;
+    const spiralGeometry = new THREE.BufferGeometry();
+    const spiralPositions = new Float32Array(spiralParticleCount * 3);
+    const spiralColors = new Float32Array(spiralParticleCount * 3);
+
+    for (let i = 0; i < spiralParticleCount; i++) {
+        const angle = (i / spiralParticleCount) * Math.PI * 6;
+        const radius = blackHoleState.eventHorizonRadius * 0.6 + (i / spiralParticleCount) * blackHoleState.eventHorizonRadius * 1.2;
+
+        spiralPositions[i * 3] = Math.cos(angle) * radius;
+        spiralPositions[i * 3 + 1] = Math.sin(angle) * radius;
+        spiralPositions[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
+
+        // Color gradient from purple to orange
+        const t = i / spiralParticleCount;
+        spiralColors[i * 3] = 0.8 + t * 0.2;     // R
+        spiralColors[i * 3 + 1] = 0.2 + t * 0.5; // G
+        spiralColors[i * 3 + 2] = 0.9 - t * 0.5; // B
+    }
+
+    spiralGeometry.setAttribute('position', new THREE.BufferAttribute(spiralPositions, 3));
+    spiralGeometry.setAttribute('color', new THREE.BufferAttribute(spiralColors, 3));
+
+    const spiralMaterial = new THREE.PointsMaterial({
+        size: 0.3,
+        transparent: true,
+        opacity: 0.6,
+        vertexColors: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    });
+
+    blackHoleState.spiralParticles = new THREE.Points(spiralGeometry, spiralMaterial);
+    blackHoleState.spiralParticles.visible = false;
+    scene.add(blackHoleState.spiralParticles);
+
+    // Accretion disk - enhanced with more intense swirl
     const diskGeometry = new THREE.RingGeometry(
-        blackHoleState.eventHorizonRadius,
-        blackHoleState.eventHorizonRadius * 1.8,
+        blackHoleState.eventHorizonRadius * 0.8,
+        blackHoleState.eventHorizonRadius * 1.6,
         64
     );
     const diskMaterial = new THREE.ShaderMaterial({
@@ -786,17 +864,26 @@ function createBlackHole() {
                 vec2 center = vec2(0.5, 0.5);
                 float dist = distance(vUv, center);
 
-                // Rotating swirl pattern
+                // Multiple layered rotating swirl patterns
                 float angle = atan(vUv.y - 0.5, vUv.x - 0.5);
-                float spiral = sin(angle * 8.0 + dist * 20.0 - time * 2.0) * 0.5 + 0.5;
+                float spiral1 = sin(angle * 12.0 + dist * 25.0 - time * 3.0) * 0.5 + 0.5;
+                float spiral2 = sin(angle * 8.0 - dist * 15.0 + time * 2.0) * 0.5 + 0.5;
+                float spiral = (spiral1 + spiral2 * 0.7) / 1.7;
 
-                // Color gradient from center to edge
-                vec3 color = mix(color1, color2, dist * 2.0);
-                color = mix(color, color3, spiral);
+                // Turbulent flow pattern
+                float turbulence = sin(angle * 5.0 + time) * cos(dist * 20.0 - time * 2.5) * 0.3 + 0.5;
 
-                // Fade based on distance
-                float alpha = (1.0 - dist * 2.0) * (0.4 + spiral * 0.3);
-                alpha *= smoothstep(0.0, 0.1, dist); // Fade near center
+                // Color gradient from center to edge with more variation
+                vec3 color = mix(color1, color2, dist * 2.5);
+                color = mix(color, color3, spiral * turbulence);
+
+                // Add bright spots for more dynamic look
+                float brightSpots = smoothstep(0.7, 1.0, spiral) * 0.5;
+                color += vec3(brightSpots);
+
+                // Fade based on distance with smoother transition
+                float alpha = (1.0 - dist * 2.0) * (0.5 + spiral * 0.4 + turbulence * 0.2);
+                alpha *= smoothstep(0.0, 0.15, dist); // Fade near center
 
                 gl_FragColor = vec4(color, alpha);
             }
@@ -822,7 +909,9 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         blackHoleState.active = !blackHoleState.active;
         blackHoleState.mesh.visible = blackHoleState.active;
+        blackHoleState.innerGlow.visible = blackHoleState.active;
         blackHoleState.glowMesh.visible = blackHoleState.active;
+        blackHoleState.spiralParticles.visible = blackHoleState.active;
         blackHoleState.accretionDisk.visible = blackHoleState.active;
 
         if (blackHoleState.active) {
@@ -978,20 +1067,30 @@ function animate() {
 
         // Update black hole mesh positions
         blackHoleState.mesh.position.copy(blackHoleState.position);
+        blackHoleState.innerGlow.position.copy(blackHoleState.position);
         blackHoleState.glowMesh.position.copy(blackHoleState.position);
+        blackHoleState.spiralParticles.position.copy(blackHoleState.position);
         blackHoleState.accretionDisk.position.copy(blackHoleState.position);
+
+        // Update inner glow shader time
+        if (blackHoleState.innerGlow.material.uniforms) {
+            blackHoleState.innerGlow.material.uniforms.time.value = clock.elapsedTime;
+        }
 
         // Rotate glow ring to face camera
         blackHoleState.glowMesh.lookAt(camera.position);
 
-        // Animate accretion disk rotation and shader
-        blackHoleState.accretionDisk.rotation.z += deltaTime * 0.5;
+        // Animate spiral particles rotation - counter-rotating layers
+        blackHoleState.spiralParticles.rotation.z += deltaTime * 1.2;
+
+        // Animate accretion disk rotation and shader - faster swirl
+        blackHoleState.accretionDisk.rotation.z += deltaTime * 0.8;
         if (blackHoleState.accretionDisk.material.uniforms) {
             blackHoleState.accretionDisk.material.uniforms.time.value = clock.elapsedTime;
         }
 
         // Pulsing glow effect
-        const pulseFactor = Math.sin(clock.elapsedTime * 2) * 0.1 + 0.3;
+        const pulseFactor = Math.sin(clock.elapsedTime * 2) * 0.1 + 0.25;
         blackHoleState.glowMesh.material.opacity = pulseFactor;
     }
 
