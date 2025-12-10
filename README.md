@@ -26,8 +26,8 @@ An interactive 3D visualization featuring particle-based network structures that
   - Smaller, more concentrated black core
   - Pulsing inner glow with purple-blue gradient
   - Animated outer glow ring
-  - 200 spiral particles creating dynamic swirling streams
-  - Rotating accretion disk with multi-layered turbulent flow patterns
+  - 200 spiral particles creating dynamic swirling streams (purple to blue gradient)
+  - Rotating accretion disk with multi-layered turbulent flow patterns (purple-blue color scheme)
 - **Extreme Deformation**: Watch meshes stretch and swirl as they're pulled toward the event horizon
 - **Tidal Forces**: Perpendicular forces create beautiful swirling patterns
 - **Toggle On/Off**: Press B key to activate/deactivate
@@ -61,7 +61,7 @@ Control wind forces using arrow keys:
   - **Spaghettification**: Meshes stretch and deform as they approach
   - **Tidal Forces**: Perpendicular forces create swirling patterns
   - **Event Horizon**: Extreme deformation near the center
-  - **Accretion Disk**: Rotating orange/yellow disk with spiral patterns
+  - **Accretion Disk**: Rotating purple-blue disk with spiral patterns
   - **Purple Glow**: Pulsing ring showing the gravitational influence zone
 
 #### Mouse Interactions
@@ -146,8 +146,8 @@ When activated (B key), the black hole creates realistic gravitational effects:
   - Compact black core sphere (radius: 4 units)
   - Pulsing inner glow sphere with dynamic purple-blue shader
   - Purple outer glow ring
-  - 200 spiral particles forming swirling streams (additive blending)
-  - Rotating accretion disk with multi-layered turbulent flow
+  - 200 spiral particles forming swirling streams (purple to blue gradient, additive blending)
+  - Rotating accretion disk with multi-layered turbulent flow (purple-blue colors)
   - Enhanced shader with dual spiral patterns and bright spots
   - Faster rotation speeds for more dynamic appearance
 - **Mass Effect**: Both mesh positions and individual vertices are affected

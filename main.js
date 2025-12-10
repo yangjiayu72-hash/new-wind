@@ -805,11 +805,11 @@ function createBlackHole() {
         spiralPositions[i * 3 + 1] = Math.sin(angle) * radius;
         spiralPositions[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
 
-        // Color gradient from purple to orange
+        // Color gradient from purple to blue
         const t = i / spiralParticleCount;
-        spiralColors[i * 3] = 0.8 + t * 0.2;     // R
-        spiralColors[i * 3 + 1] = 0.2 + t * 0.5; // G
-        spiralColors[i * 3 + 2] = 0.9 - t * 0.5; // B
+        spiralColors[i * 3] = 0.5 - t * 0.3;     // R (purple to blue)
+        spiralColors[i * 3 + 1] = 0.2 + t * 0.6; // G (increasing blue-cyan)
+        spiralColors[i * 3 + 2] = 0.9 + t * 0.1; // B (stays high)
     }
 
     spiralGeometry.setAttribute('position', new THREE.BufferAttribute(spiralPositions, 3));
@@ -839,9 +839,9 @@ function createBlackHole() {
         side: THREE.DoubleSide,
         uniforms: {
             time: { value: 0 },
-            color1: { value: new THREE.Color(0xff4400) },
-            color2: { value: new THREE.Color(0xff8800) },
-            color3: { value: new THREE.Color(0xffaa00) }
+            color1: { value: new THREE.Color(0x6600ff) }, // Deep purple
+            color2: { value: new THREE.Color(0x8844ff) }, // Medium purple
+            color3: { value: new THREE.Color(0x4488ff) }  // Purple-blue
         },
         vertexShader: `
             varying vec2 vUv;
