@@ -17,6 +17,10 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.appendChild(renderer.domElement);
 
+// Raycaster for click detection
+const raycaster = new THREE.Raycaster();
+raycaster.params.Line.threshold = 2; // Increase hit detection threshold for lines
+
 // Wind state
 const windState = {
     active: false,
@@ -74,6 +78,15 @@ class ParticleNet {
         this.captured = false;
         this.releasing = false;
         this.releaseProgress = 0;
+
+        // Interactive color and shape changing
+        this.availableColors = [0x00ffff, 0x00ccff, 0x0099ff, 0x00ffcc, 0x33ffff, 0xff00ff, 0xff6600, 0x00ff00, 0xffff00, 0xff0099];
+        this.availableShapes = ['sphere', 'elongated', 'flat', 'tube', 'cluster', 'irregular'];
+        this.currentColorIndex = Math.floor(Math.random() * this.availableColors.length);
+        this.currentShapeIndex = this.availableShapes.indexOf(shapeType);
+        this.morphProgress = 0;
+        this.morphing = false;
+        this.targetShape = null;
 
         // Idle animation parameters - slower and smoother
         this.driftSpeed = new THREE.Vector3(
@@ -767,6 +780,182 @@ class ParticleNet {
             positions.needsUpdate = true;
         }
     }
+
+    changeColor() {
+        // Cycle to next color
+        this.currentColorIndex = (this.currentColorIndex + 1) % this.availableColors.length;
+        const newColor = this.availableColors[this.currentColorIndex];
+
+        // Animate color change
+        const startColor = new THREE.Color(this.material.color);
+        const endColor = new THREE.Color(newColor);
+        let progress = 0;
+
+        const animateColor = () => {
+            progress += 0.05;
+            if (progress <= 1) {
+                this.material.color.lerpColors(startColor, endColor, progress);
+                requestAnimationFrame(animateColor);
+            } else {
+                this.material.color.set(newColor);
+            }
+        };
+        animateColor();
+
+        // Flash effect
+        const originalOpacity = this.material.opacity;
+        this.material.opacity = 1.0;
+        setTimeout(() => {
+            this.material.opacity = originalOpacity;
+        }, 100);
+    }
+
+    changeShape() {
+        if (this.morphing) return; // Don't start new morph if already morphing
+
+        // Cycle to next shape
+        this.currentShapeIndex = (this.currentShapeIndex + 1) % this.availableShapes.length;
+        this.targetShape = this.availableShapes[this.currentShapeIndex];
+        this.morphing = true;
+        this.morphProgress = 0;
+
+        // Store current positions before morph
+        this.preMorphPositions = [];
+        const positions = this.geometry.attributes.position;
+        for (let i = 0; i < positions.count; i++) {
+            this.preMorphPositions.push(new THREE.Vector3(
+                positions.getX(i),
+                positions.getY(i),
+                positions.getZ(i)
+            ));
+        }
+
+        // Generate new shape vertices
+        this.targetPositions = this.generateShapeVertices(this.targetShape);
+    }
+
+    generateShapeVertices(shapeType) {
+        const vertices = [];
+        const gridSize = Math.floor(5 + this.density * 4);
+        const step = this.size / gridSize;
+
+        for (let i = 0; i <= gridSize; i++) {
+            for (let j = 0; j <= gridSize; j++) {
+                for (let k = 0; k <= gridSize; k++) {
+                    let x = (i - gridSize / 2) * step;
+                    let y = (j - gridSize / 2) * step;
+                    let z = (k - gridSize / 2) * step;
+
+                    let shouldInclude = false;
+                    let shapeScale = { x: 1, y: 1, z: 1 };
+
+                    switch (shapeType) {
+                        case 'sphere':
+                            const sphereDist = Math.sqrt(x * x + y * y + z * z);
+                            shouldInclude = sphereDist < this.size * 0.55;
+                            break;
+
+                        case 'elongated':
+                            shapeScale = { x: 0.6, y: 1.8, z: 0.6 };
+                            const elongatedDist = Math.sqrt(
+                                (x * x) / (shapeScale.x * shapeScale.x) +
+                                (y * y) / (shapeScale.y * shapeScale.y) +
+                                (z * z) / (shapeScale.z * shapeScale.z)
+                            );
+                            shouldInclude = elongatedDist < this.size * 0.5;
+                            y *= shapeScale.y;
+                            x *= shapeScale.x;
+                            z *= shapeScale.z;
+                            break;
+
+                        case 'flat':
+                            shapeScale = { x: 1.5, y: 0.3, z: 1.5 };
+                            const flatDist = Math.sqrt(
+                                (x * x) / (shapeScale.x * shapeScale.x) +
+                                (y * y) / (shapeScale.y * shapeScale.y) +
+                                (z * z) / (shapeScale.z * shapeScale.z)
+                            );
+                            shouldInclude = flatDist < this.size * 0.5;
+                            y *= shapeScale.y;
+                            x *= shapeScale.x;
+                            z *= shapeScale.z;
+                            break;
+
+                        case 'tube':
+                            const tubeRadialDist = Math.sqrt(x * x + z * z);
+                            shouldInclude = tubeRadialDist < this.size * 0.35 && Math.abs(y) < this.size * 0.8;
+                            break;
+
+                        case 'cluster':
+                            const clusterDist = Math.sqrt(x * x + y * y + z * z);
+                            const clusterNoise = Math.sin(x * 2) * Math.cos(y * 2) * Math.sin(z * 2);
+                            shouldInclude = clusterDist < this.size * 0.6 && clusterNoise > -0.3;
+                            break;
+
+                        case 'irregular':
+                            const irregularDist = Math.sqrt(x * x + y * y + z * z);
+                            const irregularNoise =
+                                Math.sin(x * 1.5) * 0.3 +
+                                Math.cos(y * 1.8) * 0.3 +
+                                Math.sin(z * 1.3) * 0.3;
+                            shouldInclude = irregularDist < this.size * (0.5 + irregularNoise);
+                            break;
+                    }
+
+                    if (shouldInclude) {
+                        const noise = (Math.random() - 0.5) * 0.25;
+                        vertices.push(new THREE.Vector3(x + noise, y + noise, z + noise));
+                    }
+                }
+            }
+        }
+
+        return vertices;
+    }
+
+    updateMorph(deltaTime) {
+        if (!this.morphing) return;
+
+        this.morphProgress += deltaTime * 1.5; // Morph speed
+
+        if (this.morphProgress >= 1.0) {
+            // Morph complete
+            this.morphing = false;
+            this.shapeType = this.targetShape;
+            this.morphProgress = 0;
+
+            // Update original positions to match new shape
+            const positions = this.geometry.attributes.position;
+            this.originalPositions = [];
+            for (let i = 0; i < positions.count; i++) {
+                this.originalPositions.push(new THREE.Vector3(
+                    positions.getX(i),
+                    positions.getY(i),
+                    positions.getZ(i)
+                ));
+            }
+        } else {
+            // Animate morph
+            const easeInOut = this.morphProgress < 0.5
+                ? 2 * this.morphProgress * this.morphProgress
+                : 1 - Math.pow(-2 * this.morphProgress + 2, 2) / 2;
+
+            const positions = this.geometry.attributes.position;
+            const maxCount = Math.min(positions.count, this.preMorphPositions.length, this.targetPositions.length);
+
+            for (let i = 0; i < maxCount; i++) {
+                const start = this.preMorphPositions[i];
+                const end = this.targetPositions[i] || start;
+
+                const x = start.x + (end.x - start.x) * easeInOut;
+                const y = start.y + (end.y - start.y) * easeInOut;
+                const z = start.z + (end.z - start.z) * easeInOut;
+
+                positions.setXYZ(i, x, y, z);
+            }
+            positions.needsUpdate = true;
+        }
+    }
 }
 
 // Create particle networks
@@ -1070,12 +1259,39 @@ document.addEventListener('mousedown', (e) => {
 });
 
 document.addEventListener('mouseup', (e) => {
-    if (mouseState.isDown) {
-        // Create click burst effect
+    if (mouseState.isDown && !mouseState.isDragging) {
+        // Check if clicking on a particle net
+        raycaster.setFromCamera(mouseState.position, camera);
+
+        // Get all meshes from particle nets
+        const meshes = particleNets.map(net => net.mesh);
+        const intersects = raycaster.intersectObjects(meshes);
+
+        if (intersects.length > 0) {
+            // Find which particle net was clicked
+            const clickedMesh = intersects[0].object;
+            const clickedNet = particleNets.find(net => net.mesh === clickedMesh);
+
+            if (clickedNet && !clickedNet.captured && !clickedNet.releasing) {
+                // Change color and shape of clicked net
+                clickedNet.changeColor();
+                clickedNet.changeShape();
+            }
+        } else {
+            // No grid clicked, create click burst effect
+            mouseState.clickBursts.push({
+                position: mouseState.worldPosition.clone(),
+                strength: 2.0,
+                radius: 25,
+                life: 1.0
+            });
+        }
+    } else if (mouseState.isDown && mouseState.isDragging) {
+        // Create enhanced drag burst effect
         mouseState.clickBursts.push({
             position: mouseState.worldPosition.clone(),
-            strength: mouseState.isDragging ? 3.0 : 2.0,
-            radius: mouseState.isDragging ? 35 : 25,
+            strength: 3.0,
+            radius: 35,
             life: 1.0
         });
     }
@@ -1104,11 +1320,34 @@ document.addEventListener('touchmove', (e) => {
 
 document.addEventListener('touchend', (e) => {
     e.preventDefault();
-    if (mouseState.isDown) {
+    if (mouseState.isDown && !mouseState.isDragging) {
+        // Check if tapping on a particle net
+        raycaster.setFromCamera(mouseState.position, camera);
+
+        const meshes = particleNets.map(net => net.mesh);
+        const intersects = raycaster.intersectObjects(meshes);
+
+        if (intersects.length > 0) {
+            const clickedMesh = intersects[0].object;
+            const clickedNet = particleNets.find(net => net.mesh === clickedMesh);
+
+            if (clickedNet && !clickedNet.captured && !clickedNet.releasing) {
+                clickedNet.changeColor();
+                clickedNet.changeShape();
+            }
+        } else {
+            mouseState.clickBursts.push({
+                position: mouseState.worldPosition.clone(),
+                strength: 2.0,
+                radius: 25,
+                life: 1.0
+            });
+        }
+    } else if (mouseState.isDown && mouseState.isDragging) {
         mouseState.clickBursts.push({
             position: mouseState.worldPosition.clone(),
-            strength: mouseState.isDragging ? 3.0 : 2.0,
-            radius: mouseState.isDragging ? 35 : 25,
+            strength: 3.0,
+            radius: 35,
             life: 1.0
         });
     }
@@ -1236,6 +1475,9 @@ function animate() {
         if (windState.strength < 0.7 && !blackHoleState.active) {
             net.updateIdle(deltaTime);
         }
+
+        // Update shape morphing animation
+        net.updateMorph(deltaTime);
     });
 
     // Very gentle camera movement - like floating in space

@@ -19,6 +19,16 @@ An interactive 3D visualization featuring particle-based network structures that
 - **Reactive Audio**: Wind volume automatically increases with wind strength
 - **Toggle Control**: Easy on/off button with visual feedback
 
+### Interactive Playability
+- **Click to Transform**: Click on any particle grid to change its color and shape
+- **10 Vibrant Colors**: Cycle through cyan, blue, magenta, orange, green, yellow, pink, and more
+- **6 Unique Shapes**: Morph between sphere, elongated, flat, tube, cluster, and irregular forms
+- **Smooth Morphing**: Animated shape transitions with easing for fluid transformations
+- **Color Transitions**: Smooth color interpolation with flash effect for visual feedback
+- **Touch Support**: Works seamlessly on mobile and tablet devices
+- **Raycasting Detection**: Precise click detection on 3D wireframe meshes
+- **Non-destructive**: Grids retain their transformation even during other interactions
+
 ### Black Hole Mode
 - **Gravitational Singularity**: Compact, intense black hole that follows your mouse cursor
 - **Realistic Physics**: Inverse square law gravity with spaghettification effects
@@ -78,7 +88,14 @@ Control wind forces using arrow keys:
   - Opacity increases based on proximity
   - Subtle color shift to brighter cyan
   - Smooth fade transitions
-- **Click**: Creates an explosive burst effect with ripples
+- **Click on Grid**: Transform individual particle networks
+  - Click directly on a grid to change both its color and shape
+  - Color cycles through 10 vibrant options (cyan, blue, magenta, orange, green, yellow, pink)
+  - Shape morphs smoothly between 6 types (sphere, elongated, flat, tube, cluster, irregular)
+  - Smooth animated transitions with easing
+  - Flash effect provides visual feedback
+  - Works on touch devices too!
+- **Click on Empty Space**: Creates an explosive burst effect with ripples
   - Pushes particles away from click point
   - Ripple waves spread through the mesh like dropping a stone in water
   - Burst radius: ~25 units
@@ -90,7 +107,8 @@ Control wind forces using arrow keys:
 
 #### Touch Support (Mobile/Tablet)
 - **Touch Move**: Same as mouse movement - attracts particles
-- **Tap**: Creates burst effect like mouse click
+- **Tap on Grid**: Changes color and shape like mouse click
+- **Tap on Empty Space**: Creates burst effect
 - **Touch Drag**: Creates enhanced burst like mouse drag
 - Full touch gesture support for all interactions
 
@@ -221,14 +239,16 @@ Simply open `index.html` in a modern web browser that supports ES6 modules.
 |--------|--------|
 | Move | Attract particles to cursor with smooth falloff |
 | Hover | Glow and brighten nearby particles |
-| Click | Create explosive burst pushing particles away |
+| Click on Grid | Change color and shape of clicked particle network |
+| Click on Empty Space | Create explosive burst pushing particles away |
 | Click + Drag | Enhanced burst with larger radius and strength |
 
 ### Touch (Mobile/Tablet)
 | Gesture | Effect |
 |---------|--------|
 | Touch Move | Attract particles to touch point |
-| Tap | Create burst effect |
+| Tap on Grid | Change color and shape of tapped particle network |
+| Tap on Empty Space | Create burst effect |
 | Touch Drag | Enhanced burst effect |
 
 ### Audio Controls
