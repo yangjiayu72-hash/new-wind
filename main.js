@@ -44,6 +44,20 @@ const mouseState = {
     influenceStrength: 1.5
 };
 
+// Black hole state
+const blackHoleState = {
+    active: false,
+    position: new THREE.Vector3(0, 0, 0),
+    targetPosition: new THREE.Vector3(0, 0, 0),
+    radius: 8,
+    eventHorizonRadius: 12,
+    gravityRadius: 35,
+    gravityStrength: 2.5,
+    mesh: null,
+    accretionDisk: null,
+    glowMesh: null
+};
+
 // Particle Network Class
 class ParticleNet {
     constructor(position, size, density, shapeType) {
@@ -601,6 +615,89 @@ class ParticleNet {
             this.material.opacity += (baseOpacity - this.material.opacity) * 0.05;
         }
     }
+
+    applyBlackHoleGravity(blackHolePos, gravityRadius, gravityStrength, eventHorizonRadius, deltaTime) {
+        const distToBlackHole = this.mesh.position.distanceTo(blackHolePos);
+
+        if (distToBlackHole < gravityRadius) {
+            // Direction toward black hole
+            const directionToBlackHole = new THREE.Vector3()
+                .subVectors(blackHolePos, this.mesh.position)
+                .normalize();
+
+            // Inverse square law for gravity (stronger when closer)
+            const distanceRatio = distToBlackHole / gravityRadius;
+            const gravityFalloff = 1 / (distanceRatio * distanceRatio + 0.1);
+            const clampedGravity = Math.min(gravityFalloff, 5.0);
+
+            // Pull mesh toward black hole
+            const meshForce = directionToBlackHole.clone()
+                .multiplyScalar(clampedGravity * gravityStrength * deltaTime * 0.8);
+            this.mesh.position.add(meshForce);
+
+            // Apply spaghettification to vertices
+            const positions = this.geometry.attributes.position;
+            for (let i = 0; i < positions.count; i++) {
+                const pos = new THREE.Vector3(
+                    positions.getX(i),
+                    positions.getY(i),
+                    positions.getZ(i)
+                );
+                const original = this.originalPositions[i];
+
+                // World position of vertex
+                const worldPos = pos.clone().applyMatrix4(this.mesh.matrixWorld);
+                const vertexDistToBlackHole = worldPos.distanceTo(blackHolePos);
+
+                if (vertexDistToBlackHole < gravityRadius) {
+                    // Calculate normalized distance for effects
+                    const distFromCenter = Math.sqrt(
+                        original.x * original.x +
+                        original.y * original.y +
+                        original.z * original.z
+                    );
+                    const normalizedDist = distFromCenter / this.size;
+
+                    const vertexDir = new THREE.Vector3()
+                        .subVectors(blackHolePos, worldPos)
+                        .normalize();
+
+                    const vertexDistRatio = vertexDistToBlackHole / gravityRadius;
+                    const vertexGravity = 1 / (vertexDistRatio * vertexDistRatio + 0.1);
+                    const clampedVertexGravity = Math.min(vertexGravity, 8.0);
+
+                    // Spaghettification: outer parts stretch more toward black hole
+                    const stretchFactor = 1.0 + normalizedDist * 0.5;
+                    const vertexForce = vertexDir.multiplyScalar(
+                        clampedVertexGravity * gravityStrength * deltaTime * 0.3 * stretchFactor
+                    );
+
+                    // Tidal forces: perpendicular stretching
+                    const toBlackHole = new THREE.Vector3().subVectors(blackHolePos, worldPos);
+                    const perpendicular = new THREE.Vector3()
+                        .crossVectors(toBlackHole, new THREE.Vector3(0, 1, 0))
+                        .normalize();
+
+                    const tidalStrength = clampedVertexGravity * 0.05;
+                    const tidalForce = perpendicular.multiplyScalar(
+                        Math.sin(this.time * 3 + normalizedDist * Math.PI) * tidalStrength
+                    );
+
+                    this.velocities[i].add(vertexForce);
+                    this.velocities[i].add(tidalForce);
+
+                    // Extreme deformation near event horizon
+                    if (vertexDistToBlackHole < eventHorizonRadius) {
+                        const horizonFactor = 1 - (vertexDistToBlackHole / eventHorizonRadius);
+                        const extremeStretch = vertexDir.multiplyScalar(
+                            horizonFactor * gravityStrength * 2.0
+                        );
+                        this.velocities[i].add(extremeStretch);
+                    }
+                }
+            }
+        }
+    }
 }
 
 // Create particle networks
@@ -624,12 +721,115 @@ for (let i = 0; i < numNets; i++) {
     scene.add(net.mesh);
 }
 
+// Create black hole visuals
+function createBlackHole() {
+    // Core black sphere (event horizon)
+    const coreGeometry = new THREE.SphereGeometry(blackHoleState.radius, 32, 32);
+    const coreMaterial = new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        transparent: true,
+        opacity: 1.0
+    });
+    blackHoleState.mesh = new THREE.Mesh(coreGeometry, coreMaterial);
+    blackHoleState.mesh.visible = false;
+    scene.add(blackHoleState.mesh);
+
+    // Outer glow/distortion ring
+    const glowGeometry = new THREE.RingGeometry(
+        blackHoleState.radius * 1.2,
+        blackHoleState.eventHorizonRadius,
+        64
+    );
+    const glowMaterial = new THREE.MeshBasicMaterial({
+        color: 0x8800ff,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.DoubleSide
+    });
+    blackHoleState.glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+    blackHoleState.glowMesh.visible = false;
+    scene.add(blackHoleState.glowMesh);
+
+    // Accretion disk
+    const diskGeometry = new THREE.RingGeometry(
+        blackHoleState.eventHorizonRadius,
+        blackHoleState.eventHorizonRadius * 1.8,
+        64
+    );
+    const diskMaterial = new THREE.ShaderMaterial({
+        transparent: true,
+        side: THREE.DoubleSide,
+        uniforms: {
+            time: { value: 0 },
+            color1: { value: new THREE.Color(0xff4400) },
+            color2: { value: new THREE.Color(0xff8800) },
+            color3: { value: new THREE.Color(0xffaa00) }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            varying vec3 vPosition;
+            void main() {
+                vUv = uv;
+                vPosition = position;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float time;
+            uniform vec3 color1;
+            uniform vec3 color2;
+            uniform vec3 color3;
+            varying vec2 vUv;
+            varying vec3 vPosition;
+
+            void main() {
+                vec2 center = vec2(0.5, 0.5);
+                float dist = distance(vUv, center);
+
+                // Rotating swirl pattern
+                float angle = atan(vUv.y - 0.5, vUv.x - 0.5);
+                float spiral = sin(angle * 8.0 + dist * 20.0 - time * 2.0) * 0.5 + 0.5;
+
+                // Color gradient from center to edge
+                vec3 color = mix(color1, color2, dist * 2.0);
+                color = mix(color, color3, spiral);
+
+                // Fade based on distance
+                float alpha = (1.0 - dist * 2.0) * (0.4 + spiral * 0.3);
+                alpha *= smoothstep(0.0, 0.1, dist); // Fade near center
+
+                gl_FragColor = vec4(color, alpha);
+            }
+        `
+    });
+    blackHoleState.accretionDisk = new THREE.Mesh(diskGeometry, diskMaterial);
+    blackHoleState.accretionDisk.visible = false;
+    scene.add(blackHoleState.accretionDisk);
+}
+
+createBlackHole();
+
 // Keyboard controls
 document.addEventListener('keydown', (e) => {
     if (e.code in windState.keys) {
         e.preventDefault();
         windState.keys[e.code] = true;
         updateWindDirection();
+    }
+
+    // Toggle black hole with 'B' key
+    if (e.code === 'KeyB') {
+        e.preventDefault();
+        blackHoleState.active = !blackHoleState.active;
+        blackHoleState.mesh.visible = blackHoleState.active;
+        blackHoleState.glowMesh.visible = blackHoleState.active;
+        blackHoleState.accretionDisk.visible = blackHoleState.active;
+
+        if (blackHoleState.active) {
+            // Position black hole at current mouse position
+            blackHoleState.position.copy(mouseState.worldPosition);
+            blackHoleState.targetPosition.copy(mouseState.worldPosition);
+        }
     }
 });
 
@@ -770,8 +970,44 @@ function animate() {
         return burst.life > 0;
     });
 
+    // Update black hole position and visuals
+    if (blackHoleState.active) {
+        // Smoothly follow mouse
+        blackHoleState.targetPosition.copy(mouseState.worldPosition);
+        blackHoleState.position.lerp(blackHoleState.targetPosition, deltaTime * 5);
+
+        // Update black hole mesh positions
+        blackHoleState.mesh.position.copy(blackHoleState.position);
+        blackHoleState.glowMesh.position.copy(blackHoleState.position);
+        blackHoleState.accretionDisk.position.copy(blackHoleState.position);
+
+        // Rotate glow ring to face camera
+        blackHoleState.glowMesh.lookAt(camera.position);
+
+        // Animate accretion disk rotation and shader
+        blackHoleState.accretionDisk.rotation.z += deltaTime * 0.5;
+        if (blackHoleState.accretionDisk.material.uniforms) {
+            blackHoleState.accretionDisk.material.uniforms.time.value = clock.elapsedTime;
+        }
+
+        // Pulsing glow effect
+        const pulseFactor = Math.sin(clock.elapsedTime * 2) * 0.1 + 0.3;
+        blackHoleState.glowMesh.material.opacity = pulseFactor;
+    }
+
     // Update all particle networks
     particleNets.forEach(net => {
+        // Apply black hole gravity
+        if (blackHoleState.active) {
+            net.applyBlackHoleGravity(
+                blackHoleState.position,
+                blackHoleState.gravityRadius,
+                blackHoleState.gravityStrength,
+                blackHoleState.eventHorizonRadius,
+                deltaTime
+            );
+        }
+
         // Apply keyboard wind
         if (windState.strength > 0.01) {
             net.applyWind(windState.direction, windState.strength, deltaTime);
@@ -779,24 +1015,28 @@ function animate() {
             net.recover(deltaTime);
         }
 
-        // Apply mouse influence (attraction)
-        net.applyMouseInfluence(
-            mouseState.worldPosition,
-            mouseState.influenceRadius,
-            mouseState.influenceStrength,
-            deltaTime
-        );
+        // Apply mouse influence (attraction) - only if black hole is not active
+        if (!blackHoleState.active) {
+            net.applyMouseInfluence(
+                mouseState.worldPosition,
+                mouseState.influenceRadius,
+                mouseState.influenceStrength,
+                deltaTime
+            );
+        }
 
         // Apply click bursts
         mouseState.clickBursts.forEach(burst => {
             net.applyClickBurst(burst.position, burst.strength, burst.radius, deltaTime);
         });
 
-        // Update hover glow effect
-        net.updateHoverEffect(mouseState.worldPosition, mouseState.influenceRadius);
+        // Update hover glow effect - only if black hole is not active
+        if (!blackHoleState.active) {
+            net.updateHoverEffect(mouseState.worldPosition, mouseState.influenceRadius);
+        }
 
         // Always apply idle animation for continuous organic movement
-        if (windState.strength < 0.7) {
+        if (windState.strength < 0.7 && !blackHoleState.active) {
             net.updateIdle(deltaTime);
         }
     });

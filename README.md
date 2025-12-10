@@ -1,6 +1,6 @@
 # 3D Particle Network System
 
-An interactive 3D visualization featuring particle-based network structures that move like soft, flowing fabric in the wind. Watch as delicate meshes flutter, ripple, and billow in response to wind forces, mouse interactions, and touch gestures. Experience the mesmerizing beauty of silk scarves dancing through space, reacting to your every movement with organic, physics-based motion.
+An interactive 3D visualization featuring particle-based network structures that move like soft, flowing fabric in the wind. Watch as delicate meshes flutter, ripple, and billow in response to wind forces, mouse interactions, and touch gestures. Experience the mesmerizing beauty of silk scarves dancing through space, reacting to your every movement with organic, physics-based motion. Activate a gravitational black hole to watch particles stretch and swirl in realistic spaghettification effects.
 
 ## Features
 
@@ -18,6 +18,15 @@ An interactive 3D visualization featuring particle-based network structures that
 - **Volume Controls**: Separate sliders for music and wind sound levels
 - **Reactive Audio**: Wind volume automatically increases with wind strength
 - **Toggle Control**: Easy on/off button with visual feedback
+
+### Black Hole Mode
+- **Gravitational Singularity**: Create a black hole that follows your mouse cursor
+- **Realistic Physics**: Inverse square law gravity with spaghettification effects
+- **Visual Representation**: Black core with purple glow and rotating accretion disk
+- **Extreme Deformation**: Watch meshes stretch and swirl as they're pulled toward the event horizon
+- **Tidal Forces**: Perpendicular forces create beautiful swirling patterns
+- **Toggle On/Off**: Press B key to activate/deactivate
+- **Mouse Controlled**: Move your mouse to drag the black hole through space
 
 ### Idle Behavior
 When no interaction is occurring, all particle networks exhibit:
@@ -38,6 +47,17 @@ Control wind forces using arrow keys:
 - **← Left Arrow**: Wind from right to left
 - **→ Right Arrow**: Wind from left to right
 - Multiple keys can be pressed simultaneously for diagonal wind
+
+#### Black Hole Mode
+- **B Key**: Toggle black hole on/off
+- **Mouse Movement**: Move the black hole through space
+- The black hole creates intense gravitational effects:
+  - **Gravitational Pull**: Particles are drawn toward the black hole
+  - **Spaghettification**: Meshes stretch and deform as they approach
+  - **Tidal Forces**: Perpendicular forces create swirling patterns
+  - **Event Horizon**: Extreme deformation near the center
+  - **Accretion Disk**: Rotating orange/yellow disk with spiral patterns
+  - **Purple Glow**: Pulsing ring showing the gravitational influence zone
 
 #### Mouse Interactions
 - **Mouse Movement**: Particles are gently attracted to your cursor
@@ -109,6 +129,22 @@ The particle networks simulate soft, flowing fabric behavior:
 - **Ripple Effects**: Click and wind forces create waves that spread through the mesh
 - **Distance-based Response**: Vertices farther from center respond more dramatically
 
+### Black Hole Physics
+When activated (B key), the black hole creates realistic gravitational effects:
+- **Inverse Square Law**: Gravity strength increases dramatically as distance decreases
+- **Spaghettification**: Meshes stretch toward the black hole, with outer vertices stretching more
+- **Tidal Forces**: Perpendicular forces create rotation and swirling motions
+- **Event Horizon**: Extreme deformation within 12 units of the center
+- **Gravity Radius**: Particles affected within 35 units
+- **Smooth Following**: Black hole smoothly tracks mouse position
+- **Visual Feedback**:
+  - Black core sphere (event horizon)
+  - Purple pulsing glow ring
+  - Rotating accretion disk with orange/yellow spiral patterns
+  - Shader-based animated swirls
+- **Mass Effect**: Both mesh positions and individual vertices are affected
+- **Clamped Forces**: Prevents extreme physics glitches while maintaining drama
+
 ## Audio Setup
 
 **Important:** To enable the full audio experience, you need to add audio files to your project.
@@ -153,8 +189,11 @@ Simply open `index.html` in a modern web browser that supports ES6 modules.
 | ↓ | Apply downward wind force |
 | ← | Apply leftward wind force |
 | → | Apply rightward wind force |
+| B | Toggle black hole mode on/off |
 
-Multiple keys can be pressed simultaneously to create diagonal wind directions.
+**Wind Controls:** Multiple arrow keys can be pressed simultaneously to create diagonal wind directions.
+
+**Black Hole Mode:** When active, the black hole follows your mouse cursor and applies gravitational forces to all particle networks within range.
 
 ### Mouse
 | Action | Effect |
