@@ -12,6 +12,33 @@
         <strong>Mouse Move:</strong> Attract particles<br>
         <strong>Click/Drag:</strong> Create wind bursts
     </div>
+
+    <div id="audio-controls">
+        <button id="audio-toggle" class="audio-btn" title="Toggle Audio">
+            <svg id="audio-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+                <path id="volume-waves" d="M15.54 8.46a5 5 0 0 1 0 7.07M18.36 5.64a9 9 0 0 1 0 12.72"/>
+            </svg>
+        </button>
+        <div id="volume-control">
+            <label for="music-volume">Music</label>
+            <input type="range" id="music-volume" min="0" max="100" value="60">
+            <label for="wind-volume">Wind</label>
+            <input type="range" id="wind-volume" min="0" max="100" value="40">
+        </div>
+    </div>
+
+    <!-- Audio Elements -->
+    <audio id="background-music" loop preload="auto">
+        <source src="audio/ambient-music.mp3" type="audio/mpeg">
+        <source src="audio/ambient-music.ogg" type="audio/ogg">
+    </audio>
+
+    <audio id="wind-sound" loop preload="auto">
+        <source src="audio/wind-ambient.mp3" type="audio/mpeg">
+        <source src="audio/wind-ambient.ogg" type="audio/ogg">
+    </audio>
+
     <script type="importmap">
         {
             "imports": {

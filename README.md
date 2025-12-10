@@ -12,6 +12,13 @@ An interactive 3D visualization featuring particle-based network structures that
 - **Color Palette**: Multiple shades of cyan and blue with varied opacity for depth
 - **Dynamic Wireframe**: Semi-transparent connections creating ethereal mesh structures
 
+### Audio Experience
+- **Ambient Background Music**: Soothing, mysterious soundscape creates an immersive atmosphere
+- **Dynamic Wind Sounds**: Gentle wind audio that intensifies when arrow keys are pressed
+- **Volume Controls**: Separate sliders for music and wind sound levels
+- **Reactive Audio**: Wind volume automatically increases with wind strength
+- **Toggle Control**: Easy on/off button with visual feedback
+
 ### Idle Behavior
 When no interaction is occurring, all particle networks exhibit:
 - **Gentle Drifting**: Multi-layered smooth positional movement with organic flow
@@ -102,6 +109,23 @@ The particle networks simulate soft, flowing fabric behavior:
 - **Ripple Effects**: Click and wind forces create waves that spread through the mesh
 - **Distance-based Response**: Vertices farther from center respond more dramatically
 
+## Audio Setup
+
+**Important:** To enable the full audio experience, you need to add audio files to your project.
+
+### Quick Setup
+1. Create an `audio` directory in the project root
+2. Add two audio files:
+   - `ambient-music.mp3` - Background ambient music
+   - `wind-ambient.mp3` - Wind sound effects
+3. See `AUDIO_GUIDE.md` for detailed instructions and free audio sources
+
+### Recommended Audio
+- **Music**: Soothing ambient, mysterious, ethereal (2-5 minutes, looping)
+- **Wind**: Gentle breeze sounds (10-30 seconds, looping)
+
+Without audio files, the visualization will still work perfectly - just without sound.
+
 ## Running the Project
 
 ### Option 1: Local Development Server
@@ -117,6 +141,8 @@ Then open `http://localhost:8000` in your browser.
 
 ### Option 2: Direct File Access
 Simply open `index.html` in a modern web browser that supports ES6 modules.
+
+**Note:** Some browsers may block audio autoplay. Click anywhere on the page or the audio button to enable sound.
 
 ## Controls
 
@@ -145,11 +171,23 @@ Multiple keys can be pressed simultaneously to create diagonal wind directions.
 | Tap | Create burst effect |
 | Touch Drag | Enhanced burst effect |
 
+### Audio Controls
+| Control | Function |
+|---------|----------|
+| Audio Button | Toggle sound on/off (bottom-right corner) |
+| Music Slider | Adjust background music volume (0-100%) |
+| Wind Slider | Adjust wind sound volume (0-100%) |
+| Hover Controls | Hover over audio button to reveal volume sliders |
+
+**Note:** Wind volume dynamically increases when arrow keys are pressed, creating reactive audio feedback.
+
 ## Browser Requirements
 
 - Modern browser with WebGL support
 - ES6 module support
+- HTML5 Audio support
 - Tested on: Chrome, Firefox, Safari, Edge
+- **Audio Note**: Some browsers block autoplay. Click the page to enable audio.
 
 ## Customization
 
@@ -199,6 +237,26 @@ radius: 25,                 // Normal click burst radius
 strength: 3.0,              // Enhanced drag burst strength
 radius: 35                  // Enhanced drag burst radius
 ```
+
+### Customize Audio Settings
+Default volume levels in HTML:
+```html
+<input type="range" id="music-volume" min="0" max="100" value="60">
+<input type="range" id="wind-volume" min="0" max="100" value="40">
+```
+
+Wind volume reactivity in `updateWindVolume()`:
+```javascript
+const finalVolume = baseVolume * (0.5 + windIntensity * 0.5);
+// Adjust multipliers to change wind responsiveness
+```
+
+### Add Your Own Audio Files
+1. Create `audio/` directory
+2. Add your files:
+   - `ambient-music.mp3`
+   - `wind-ambient.mp3`
+3. See `AUDIO_GUIDE.md` for format specifications and free sources
 
 ## Performance
 

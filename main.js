@@ -808,6 +808,11 @@ function animate() {
     camera.position.z = 50 + Math.sin(cameraTime * 0.07) * 4;
     camera.lookAt(0, 0, 0);
 
+    // Update wind sound volume based on wind strength
+    if (audioSystem.isPlaying) {
+        updateWindVolume();
+    }
+
     renderer.render(scene, camera);
 }
 
@@ -817,6 +822,93 @@ window.addEventListener('resize', () => {
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// Audio system
+const audioSystem = {
+    music: document.getElementById('background-music'),
+    wind: document.getElementById('wind-sound'),
+    toggle: document.getElementById('audio-toggle'),
+    musicVolume: document.getElementById('music-volume'),
+    windVolume: document.getElementById('wind-volume'),
+    isPlaying: false,
+    userInteracted: false
+};
+
+// Initialize audio
+function initAudio() {
+    if (!audioSystem.userInteracted) {
+        audioSystem.userInteracted = true;
+
+        // Try to play audio after first user interaction
+        const playAudio = () => {
+            if (!audioSystem.isPlaying) {
+                audioSystem.music.volume = audioSystem.musicVolume.value / 100;
+                audioSystem.wind.volume = audioSystem.windVolume.value / 100;
+
+                Promise.all([
+                    audioSystem.music.play().catch(e => console.log('Music playback failed:', e)),
+                    audioSystem.wind.play().catch(e => console.log('Wind playback failed:', e))
+                ]).then(() => {
+                    audioSystem.isPlaying = true;
+                    audioSystem.toggle.classList.remove('muted');
+                }).catch(err => {
+                    console.log('Audio autoplay blocked. Click the audio button to enable.');
+                });
+            }
+        };
+
+        // Try to play on first interaction
+        playAudio();
+    }
+}
+
+// Toggle audio on/off
+audioSystem.toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+
+    if (!audioSystem.userInteracted) {
+        audioSystem.userInteracted = true;
+    }
+
+    if (audioSystem.isPlaying) {
+        audioSystem.music.pause();
+        audioSystem.wind.pause();
+        audioSystem.isPlaying = false;
+        audioSystem.toggle.classList.add('muted');
+    } else {
+        audioSystem.music.volume = audioSystem.musicVolume.value / 100;
+        audioSystem.wind.volume = audioSystem.windVolume.value / 100;
+
+        audioSystem.music.play().catch(e => console.log('Music play error:', e));
+        audioSystem.wind.play().catch(e => console.log('Wind play error:', e));
+        audioSystem.isPlaying = true;
+        audioSystem.toggle.classList.remove('muted');
+    }
+});
+
+// Music volume control
+audioSystem.musicVolume.addEventListener('input', (e) => {
+    const volume = e.target.value / 100;
+    audioSystem.music.volume = volume;
+});
+
+// Wind volume control with dynamic intensity
+audioSystem.windVolume.addEventListener('input', (e) => {
+    updateWindVolume();
+});
+
+function updateWindVolume() {
+    const baseVolume = audioSystem.windVolume.value / 100;
+    // Increase wind volume when wind is active
+    const windIntensity = windState.strength;
+    const finalVolume = baseVolume * (0.5 + windIntensity * 0.5);
+    audioSystem.wind.volume = Math.min(1.0, finalVolume);
+}
+
+// Initialize audio on first user interaction
+document.addEventListener('click', initAudio, { once: true });
+document.addEventListener('keydown', initAudio, { once: true });
+document.addEventListener('touchstart', initAudio, { once: true });
 
 // Start animation
 animate();
