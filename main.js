@@ -57,7 +57,8 @@ const blackHoleState = {
     accretionDisk: null,
     glowMesh: null,
     innerGlow: null,
-    spiralParticles: null
+    spiralParticles: null,
+    capturedNets: []
 };
 
 // Particle Network Class
@@ -68,6 +69,11 @@ class ParticleNet {
         this.density = density;
         this.shapeType = shapeType;
         this.time = Math.random() * 1000;
+
+        // Capture and release state
+        this.captured = false;
+        this.releasing = false;
+        this.releaseProgress = 0;
 
         // Idle animation parameters - slower and smoother
         this.driftSpeed = new THREE.Vector3(
@@ -621,6 +627,12 @@ class ParticleNet {
     applyBlackHoleGravity(blackHolePos, gravityRadius, gravityStrength, eventHorizonRadius, deltaTime) {
         const distToBlackHole = this.mesh.position.distanceTo(blackHolePos);
 
+        // Check for capture (when mesh center gets very close to black hole)
+        if (distToBlackHole < eventHorizonRadius * 0.5 && !this.captured) {
+            this.captured = true;
+            return true; // Signal that this net was just captured
+        }
+
         if (distToBlackHole < gravityRadius) {
             // Direction toward black hole
             const directionToBlackHole = new THREE.Vector3()
@@ -698,6 +710,61 @@ class ParticleNet {
                     }
                 }
             }
+        }
+
+        return false; // No capture occurred
+    }
+
+    release() {
+        this.releasing = true;
+        this.releaseProgress = 0;
+    }
+
+    updateRelease(deltaTime) {
+        if (!this.releasing) return;
+
+        this.releaseProgress += deltaTime * 0.8; // Release speed
+
+        if (this.releaseProgress >= 1.0) {
+            // Release complete
+            this.releasing = false;
+            this.captured = false;
+            this.releaseProgress = 0;
+            this.mesh.visible = true;
+            this.material.opacity = 0.5 + Math.random() * 0.2;
+
+            // Reset velocities
+            for (let i = 0; i < this.velocities.length; i++) {
+                this.velocities[i].set(0, 0, 0);
+            }
+        } else {
+            // Animate release - ease out from black hole to original position
+            const easeOut = 1 - Math.pow(1 - this.releaseProgress, 3);
+
+            // Interpolate position back to base position
+            this.mesh.position.lerpVectors(
+                blackHoleState.position,
+                this.basePosition,
+                easeOut
+            );
+
+            // Fade in
+            this.material.opacity = (0.5 + Math.random() * 0.2) * easeOut;
+            this.mesh.visible = true;
+
+            // Reset geometry to original positions gradually
+            const positions = this.geometry.attributes.position;
+            for (let i = 0; i < positions.count; i++) {
+                const current = new THREE.Vector3(
+                    positions.getX(i),
+                    positions.getY(i),
+                    positions.getZ(i)
+                );
+                const target = this.originalPositions[i].clone();
+                current.lerp(target, easeOut * 0.5);
+                positions.setXYZ(i, current.x, current.y, current.z);
+            }
+            positions.needsUpdate = true;
         }
     }
 }
@@ -920,6 +987,15 @@ document.addEventListener('keydown', (e) => {
             blackHoleState.targetPosition.copy(mouseState.worldPosition);
         }
     }
+
+    // Release all captured particles with 'E' key
+    if (e.code === 'KeyE') {
+        e.preventDefault();
+        blackHoleState.capturedNets.forEach(net => {
+            net.release();
+        });
+        blackHoleState.capturedNets = [];
+    }
 });
 
 document.addEventListener('keyup', (e) => {
@@ -1096,15 +1172,37 @@ function animate() {
 
     // Update all particle networks
     particleNets.forEach(net => {
+        // Handle releasing particles
+        if (net.releasing) {
+            net.updateRelease(deltaTime);
+            return; // Skip other physics while releasing
+        }
+
+        // Handle captured particles
+        if (net.captured) {
+            // Fade out and move to black hole center
+            net.mesh.position.lerp(blackHoleState.position, deltaTime * 3);
+            net.material.opacity *= 0.95; // Fade out
+            if (net.material.opacity < 0.01) {
+                net.mesh.visible = false;
+            }
+            return; // Skip other physics while captured
+        }
+
         // Apply black hole gravity
-        if (blackHoleState.active) {
-            net.applyBlackHoleGravity(
+        if (blackHoleState.active && !net.captured) {
+            const wasCaptured = net.applyBlackHoleGravity(
                 blackHoleState.position,
                 blackHoleState.gravityRadius,
                 blackHoleState.gravityStrength,
                 blackHoleState.eventHorizonRadius,
                 deltaTime
             );
+
+            // If just captured, add to captured list
+            if (wasCaptured) {
+                blackHoleState.capturedNets.push(net);
+            }
         }
 
         // Apply keyboard wind

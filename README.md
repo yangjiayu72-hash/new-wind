@@ -29,6 +29,8 @@ An interactive 3D visualization featuring particle-based network structures that
   - 200 spiral particles creating dynamic swirling streams (purple to blue gradient)
   - Rotating accretion disk with multi-layered turbulent flow patterns (purple-blue color scheme)
 - **Extreme Deformation**: Watch meshes stretch and swirl as they're pulled toward the event horizon
+- **Particle Capture**: Meshes that get too close are sucked into the black hole and disappear
+- **Mass Release**: Press E key to release all captured particles back to their original positions
 - **Tidal Forces**: Perpendicular forces create beautiful swirling patterns
 - **Toggle On/Off**: Press B key to activate/deactivate
 - **Mouse Controlled**: Move your mouse to drag the black hole through space
@@ -55,12 +57,14 @@ Control wind forces using arrow keys:
 
 #### Black Hole Mode
 - **B Key**: Toggle black hole on/off
+- **E Key**: Release all captured particles (they return to original positions with smooth animation)
 - **Mouse Movement**: Move the black hole through space
 - The black hole creates intense gravitational effects:
   - **Gravitational Pull**: Particles are drawn toward the black hole
   - **Spaghettification**: Meshes stretch and deform as they approach
+  - **Particle Capture**: Meshes within the event horizon are captured and absorbed
   - **Tidal Forces**: Perpendicular forces create swirling patterns
-  - **Event Horizon**: Extreme deformation near the center
+  - **Event Horizon**: Extreme deformation and capture within ~3.5 units of center
   - **Accretion Disk**: Rotating purple-blue disk with spiral patterns
   - **Purple Glow**: Pulsing ring showing the gravitational influence zone
 
@@ -140,6 +144,14 @@ When activated (B key), the black hole creates realistic gravitational effects:
 - **Spaghettification**: Meshes stretch toward the black hole, with outer vertices stretching more
 - **Tidal Forces**: Perpendicular forces create rotation and swirling motions
 - **Event Horizon**: Extreme deformation within 7 units of the center (more compact)
+- **Capture Mechanism**: Particles within 3.5 units of center are captured and absorbed
+  - Captured particles fade out and move to the black hole center
+  - Become invisible once fully absorbed
+  - Stored in memory for potential release
+- **Mass Release (E Key)**: Release all captured particles simultaneously
+  - Smooth ease-out animation from black hole to original positions
+  - Gradual fade-in and geometry restoration
+  - Particles return to normal behavior after release
 - **Gravity Radius**: Particles affected within 30 units
 - **Smooth Following**: Black hole smoothly tracks mouse position
 - **Enhanced Visual Feedback**:
@@ -198,10 +210,11 @@ Simply open `index.html` in a modern web browser that supports ES6 modules.
 | ← | Apply leftward wind force |
 | → | Apply rightward wind force |
 | B | Toggle black hole mode on/off |
+| E | Release all captured particles from black hole |
 
 **Wind Controls:** Multiple arrow keys can be pressed simultaneously to create diagonal wind directions.
 
-**Black Hole Mode:** When active, the black hole follows your mouse cursor and applies gravitational forces to all particle networks within range.
+**Black Hole Mode:** When active, the black hole follows your mouse cursor and applies gravitational forces to all particle networks within range. Particles that get too close are captured and absorbed. Press E to release them all at once.
 
 ### Mouse
 | Action | Effect |
