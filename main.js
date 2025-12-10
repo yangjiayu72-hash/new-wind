@@ -640,8 +640,8 @@ class ParticleNet {
     applyBlackHoleGravity(blackHolePos, gravityRadius, gravityStrength, eventHorizonRadius, deltaTime) {
         const distToBlackHole = this.mesh.position.distanceTo(blackHolePos);
 
-        // Check for capture (when mesh center gets very close to black hole)
-        if (distToBlackHole < eventHorizonRadius * 0.5 && !this.captured) {
+        // Check for capture (increased radius to ensure all grids can be swallowed)
+        if (distToBlackHole < eventHorizonRadius * 0.8 && !this.captured) {
             this.captured = true;
             return true; // Signal that this net was just captured
         }
@@ -657,9 +657,15 @@ class ParticleNet {
             const gravityFalloff = 1 / (distanceRatio * distanceRatio + 0.1);
             const clampedGravity = Math.min(gravityFalloff, 5.0);
 
-            // Pull mesh toward black hole
+            // Extra boost near event horizon to ensure capture
+            let proximityBoost = 1.0;
+            if (distToBlackHole < eventHorizonRadius * 1.5) {
+                proximityBoost = 1.5 + (1.0 - distToBlackHole / (eventHorizonRadius * 1.5)) * 2.0;
+            }
+
+            // Pull mesh toward black hole (increased force multiplier)
             const meshForce = directionToBlackHole.clone()
-                .multiplyScalar(clampedGravity * gravityStrength * deltaTime * 0.8);
+                .multiplyScalar(clampedGravity * gravityStrength * deltaTime * 1.2 * proximityBoost);
             this.mesh.position.add(meshForce);
 
             // Apply spaghettification to vertices
