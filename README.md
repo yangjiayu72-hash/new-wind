@@ -1,6 +1,6 @@
 # 3D Particle Network System
 
-An interactive 3D visualization featuring particle-based network structures that respond to wind forces, mouse interactions, and touch gestures. Experience fluid, organic motion as particles drift, flow, and react to your every movement.
+An interactive 3D visualization featuring particle-based network structures that move like soft, flowing fabric in the wind. Watch as delicate meshes flutter, ripple, and billow in response to wind forces, mouse interactions, and touch gestures. Experience the mesmerizing beauty of silk scarves dancing through space, reacting to your every movement with organic, physics-based motion.
 
 ## Features
 
@@ -17,7 +17,9 @@ When no interaction is occurring, all particle networks exhibit:
 - **Gentle Drifting**: Multi-layered smooth positional movement with organic flow
 - **Slow Oscillation**: Sinusoidal motion patterns at varying frequencies
 - **Subtle Rotation**: Continuous rotation with easing for natural movement
-- **Mesh Deformation**: Multiple wave layers creating flowing, organic surface deformations
+- **Fabric-like Flutter**: Soft rippling and billowing like silk scarves in a gentle breeze
+- **Wave Propagation**: Waves flow through the mesh creating organic deformation
+- **Trailing Motion**: Outer vertices lag behind center, creating natural follow-through
 - **Smooth Interpolation**: All movements use easing functions for fluid transitions
 
 ### Interactive Controls
@@ -32,21 +34,23 @@ Control wind forces using arrow keys:
 
 #### Mouse Interactions
 - **Mouse Movement**: Particles are gently attracted to your cursor
-  - Creates smooth, flowing movement toward mouse position
+  - Creates smooth, flowing movement toward mouse position like fabric being pulled
   - Influence radius: ~25 units with distance-based falloff
-  - Individual vertices respond with organic deformation
+  - Individual vertices respond with organic, fabric-like deformation
+  - Wave effects propagate through the mesh structure
 - **Mouse Hover**: Particles near cursor glow and brighten
   - Opacity increases based on proximity
   - Subtle color shift to brighter cyan
   - Smooth fade transitions
-- **Click**: Creates an explosive burst effect
+- **Click**: Creates an explosive burst effect with ripples
   - Pushes particles away from click point
+  - Ripple waves spread through the mesh like dropping a stone in water
   - Burst radius: ~25 units
   - Strength: 2.0 force units
 - **Click + Drag**: Creates a stronger swirling burst
-  - Enhanced burst radius: ~35 units
+  - Enhanced burst radius: ~35 units with fabric rippling
   - Increased strength: 3.0 force units
-  - Perfect for creating dramatic effects
+  - Perfect for creating dramatic wave effects
 
 #### Touch Support (Mobile/Tablet)
 - **Touch Move**: Same as mouse movement - attracts particles
@@ -57,10 +61,12 @@ Control wind forces using arrow keys:
 #### Wind Effects
 - Smooth force field applied across entire 3D space with gradual transitions
 - All particles respond simultaneously with individual turbulence
-- Gentle movement shifts in wind direction
-- Mesh surfaces stretch and bend with fluid deformation
+- Fabric-like rippling and waving like scarves in the wind
+- Mesh surfaces stretch, bend, and billow with soft, flowing deformation
+- Wave propagation spreads through the mesh structure
+- Outer vertices trail behind center, creating natural fabric motion
 - Multi-layered turbulence creates natural, flowing secondary motion
-- Trailing regions exhibit organic folding and wave behavior
+- Gentle sway and flutter effects enhance the organic feel
 - Wind accumulator provides smooth acceleration and deceleration
 
 #### Recovery
@@ -78,12 +84,23 @@ Control wind forces using arrow keys:
 - **WebGL**: Hardware-accelerated graphics
 
 ### Key Components
-- `ParticleNet` class: Individual network structures with interactive methods
-- Wind physics system: Force application and deformation
-- Mouse interaction system: Attraction, hover effects, and burst mechanics
+- `ParticleNet` class: Individual network structures with fabric-like physics
+- Fabric simulation: Flutter, billowing, wave propagation, and trailing behavior
+- Wind physics system: Soft force application with ripple effects
+- Mouse interaction system: Attraction, hover effects, and burst mechanics with wave propagation
 - Touch event handlers: Full mobile device support
 - Animation loop: 60fps rendering with multi-layer interaction
 - Event handlers: Keyboard, mouse, and touch input processing
+
+### Fabric-Like Physics
+The particle networks simulate soft, flowing fabric behavior:
+- **Flutter**: Each mesh oscillates with unique phase offsets creating natural variation
+- **Billowing**: Multi-frequency sine waves combine for organic puffing motion
+- **Wave Propagation**: Disturbances ripple outward from center to edges
+- **Trailing Behavior**: Outer vertices lag behind center, mimicking fabric inertia
+- **Soft Damping**: Reduced velocity damping (0.88) allows flowing, continued motion
+- **Ripple Effects**: Click and wind forces create waves that spread through the mesh
+- **Distance-based Response**: Vertices farther from center respond more dramatically
 
 ## Running the Project
 

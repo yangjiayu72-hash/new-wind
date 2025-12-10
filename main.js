@@ -74,16 +74,23 @@ class ParticleNet {
             Math.random() * 100
         );
 
+        // Fabric-like properties
+        this.flutterPhase = Math.random() * Math.PI * 2;
+        this.flutterSpeed = 0.5 + Math.random() * 0.5;
+        this.flutterIntensity = 0.3 + Math.random() * 0.4;
+
         // Create mesh structure
         this.createMesh();
 
         // Wind physics
         this.velocities = [];
         this.originalPositions = [];
+        this.vertexTrails = []; // For trailing behavior
         this.windAccumulator = new THREE.Vector3(0, 0, 0);
         const positions = this.geometry.attributes.position;
         for (let i = 0; i < positions.count; i++) {
             this.velocities.push(new THREE.Vector3(0, 0, 0));
+            this.vertexTrails.push(new THREE.Vector3(0, 0, 0));
             this.originalPositions.push(new THREE.Vector3(
                 positions.getX(i),
                 positions.getY(i),
@@ -255,22 +262,68 @@ class ParticleNet {
         this.mesh.rotation.y += this.rotationSpeed.y * easeInOutSine(Math.cos(this.time * 0.12) * 0.5 + 0.5);
         this.mesh.rotation.z += this.rotationSpeed.z * easeInOutSine(Math.sin(this.time * 0.08) * 0.5 + 0.5);
 
-        // Subtle, flowing mesh deformation
+        // Fabric-like flutter and ripple deformation
         const positions = this.geometry.attributes.position;
         for (let i = 0; i < positions.count; i++) {
             const original = this.originalPositions[i];
-            const deformAmount = 0.08;
 
-            // Multiple wave layers for organic movement
-            const wave1 = Math.sin(this.time * this.oscillationSpeed * 0.6 + i * 0.05 + original.x * 0.1) * deformAmount;
-            const wave2 = Math.cos(this.time * this.oscillationSpeed * 0.4 + i * 0.08 + original.y * 0.1) * deformAmount;
-            const wave3 = Math.sin(this.time * this.oscillationSpeed * 0.5 + i * 0.06 + original.z * 0.1) * deformAmount * 0.5;
+            // Calculate distance from center for wave propagation
+            const distFromCenter = Math.sqrt(
+                original.x * original.x +
+                original.y * original.y +
+                original.z * original.z
+            );
+            const normalizedDist = distFromCenter / this.size;
+
+            // Flutter like fabric in gentle breeze
+            const flutterX = Math.sin(
+                this.time * this.flutterSpeed * 2 +
+                this.flutterPhase +
+                original.y * 0.3 +
+                normalizedDist * 2
+            ) * this.flutterIntensity * 0.3;
+
+            const flutterY = Math.cos(
+                this.time * this.flutterSpeed * 1.7 +
+                this.flutterPhase +
+                original.x * 0.3 +
+                normalizedDist * 2.5
+            ) * this.flutterIntensity * 0.4;
+
+            const flutterZ = Math.sin(
+                this.time * this.flutterSpeed * 2.2 +
+                this.flutterPhase +
+                original.x * 0.2 +
+                original.y * 0.2
+            ) * this.flutterIntensity * 0.25;
+
+            // Wave propagation through the mesh
+            const wavePropagation = Math.sin(
+                this.time * this.oscillationSpeed * 3 +
+                normalizedDist * Math.PI * 2
+            ) * 0.15;
+
+            // Billowing effect
+            const billow = Math.sin(
+                this.time * this.oscillationSpeed * 1.5 +
+                original.x * 0.15 +
+                original.z * 0.15
+            ) * Math.cos(
+                this.time * this.oscillationSpeed * 1.2 +
+                original.y * 0.1
+            ) * 0.2;
+
+            // Trailing effect based on position
+            const trailFactor = (1 + normalizedDist) * 0.3;
+            this.vertexTrails[i].x += (flutterX - this.vertexTrails[i].x) * deltaTime * (2 - trailFactor);
+            this.vertexTrails[i].y += (flutterY - this.vertexTrails[i].y) * deltaTime * (2 - trailFactor);
+            this.vertexTrails[i].z += (flutterZ - this.vertexTrails[i].z) * deltaTime * (2 - trailFactor);
 
             positions.setXYZ(
                 i,
-                original.x + wave1 + wave3,
-                original.y + wave2 + wave3,
-                original.z + wave1 * 0.3 + wave2 * 0.3
+                original.x + this.vertexTrails[i].x + wavePropagation * 0.3 + billow * 0.2,
+                original.y + this.vertexTrails[i].y + wavePropagation * 0.4 + billow * 0.3,
+                original.z + this.vertexTrails[i].z + wavePropagation * 0.2 + billow * 0.15
             );
         }
         positions.needsUpdate = true;
@@ -288,48 +341,77 @@ class ParticleNet {
                 positions.getY(i),
                 positions.getZ(i)
             );
+            const original = this.originalPositions[i];
 
             // Calculate world position
             const worldPos = pos.clone().applyMatrix4(this.mesh.matrixWorld);
 
-            // Smooth, flowing turbulence with multiple frequency layers
+            // Calculate distance from center for fabric-like trailing
+            const distFromCenter = Math.sqrt(
+                original.x * original.x +
+                original.y * original.y +
+                original.z * original.z
+            );
+            const normalizedDist = distFromCenter / this.size;
+            const trailingFactor = 0.5 + normalizedDist * 0.5; // Outer parts trail more
+
+            // Soft, flowing turbulence with multiple frequency layers
             const turbulenceX =
-                Math.sin(this.time * 0.8 + worldPos.x * 0.08 + worldPos.y * 0.05) * 0.15 +
-                Math.sin(this.time * 1.3 + worldPos.x * 0.12) * 0.08;
+                Math.sin(this.time * 0.8 + worldPos.x * 0.08 + worldPos.y * 0.05) * 0.2 +
+                Math.sin(this.time * 1.3 + worldPos.x * 0.12 + normalizedDist * 2) * 0.12;
 
             const turbulenceY =
-                Math.cos(this.time * 0.7 + worldPos.y * 0.08 + worldPos.z * 0.05) * 0.15 +
-                Math.cos(this.time * 1.1 + worldPos.y * 0.1) * 0.08;
+                Math.cos(this.time * 0.7 + worldPos.y * 0.08 + worldPos.z * 0.05) * 0.2 +
+                Math.cos(this.time * 1.1 + worldPos.y * 0.1 + normalizedDist * 2) * 0.12;
 
             const turbulenceZ =
-                Math.sin(this.time * 0.9 + worldPos.z * 0.08 + worldPos.x * 0.05) * 0.15 +
-                Math.sin(this.time * 1.2 + worldPos.z * 0.11) * 0.08;
+                Math.sin(this.time * 0.9 + worldPos.z * 0.08 + worldPos.x * 0.05) * 0.2 +
+                Math.sin(this.time * 1.2 + worldPos.z * 0.11 + normalizedDist * 2) * 0.12;
 
             const turbulence = new THREE.Vector3(turbulenceX, turbulenceY, turbulenceZ);
 
-            // Gentle wind force with smooth accumulation
+            // Fabric ripple effect - waves propagating through the mesh
+            const ripple = Math.sin(
+                this.time * 4 +
+                normalizedDist * Math.PI * 3 +
+                this.windAccumulator.length() * 2
+            ) * windStrength * 0.4;
+
+            const rippleDir = new THREE.Vector3(
+                Math.sin(this.time * 2 + original.x * 0.2),
+                Math.cos(this.time * 2 + original.y * 0.2),
+                Math.sin(this.time * 2 + original.z * 0.2)
+            ).normalize();
+
+            // Gentle wind force with smooth accumulation and fabric behavior
             const windForce = this.windAccumulator.clone()
-                .multiplyScalar(0.8)
-                .add(turbulence);
+                .multiplyScalar(0.6 * trailingFactor)
+                .add(turbulence.multiplyScalar(trailingFactor))
+                .add(rippleDir.multiplyScalar(ripple));
 
             // Apply force to velocity with smooth acceleration
-            this.velocities[i].add(windForce.multiplyScalar(deltaTime * 0.5));
+            this.velocities[i].add(windForce.multiplyScalar(deltaTime * 0.6));
 
-            // Stronger damping for smoother motion
-            this.velocities[i].multiplyScalar(0.92);
+            // Soft damping for gentle, flowing motion
+            this.velocities[i].multiplyScalar(0.88);
 
-            // Update position with smooth interpolation
-            const targetPos = pos.clone().add(this.velocities[i].clone().multiplyScalar(deltaTime * 2));
-            pos.lerp(targetPos, 0.3);
+            // Update position with smooth interpolation for fabric softness
+            const targetPos = pos.clone().add(this.velocities[i].clone().multiplyScalar(deltaTime * 2.5));
+            pos.lerp(targetPos, 0.4);
 
             positions.setXYZ(i, pos.x, pos.y, pos.z);
         }
 
         positions.needsUpdate = true;
 
-        // Apply gentle force to mesh position
+        // Apply gentle force to mesh position with slight sway
         const meshForce = this.windAccumulator.clone().multiplyScalar(deltaTime * 2);
-        this.mesh.position.add(meshForce);
+        const sway = new THREE.Vector3(
+            Math.sin(this.time * 1.5) * windStrength * 0.3,
+            Math.cos(this.time * 1.3) * windStrength * 0.2,
+            Math.sin(this.time * 1.7) * windStrength * 0.2
+        );
+        this.mesh.position.add(meshForce).add(sway.multiplyScalar(deltaTime));
     }
 
     recover(deltaTime) {
@@ -385,7 +467,7 @@ class ParticleNet {
             // Apply subtle attraction to mesh
             this.mesh.position.add(force);
 
-            // Apply to individual vertices with variation
+            // Apply to individual vertices with fabric-like response
             const positions = this.geometry.attributes.position;
             for (let i = 0; i < positions.count; i++) {
                 const pos = new THREE.Vector3(
@@ -393,19 +475,41 @@ class ParticleNet {
                     positions.getY(i),
                     positions.getZ(i)
                 );
+                const original = this.originalPositions[i];
 
                 const worldPos = pos.clone().applyMatrix4(this.mesh.matrixWorld);
                 const vertexDistToMouse = worldPos.distanceTo(mouseWorldPos);
 
                 if (vertexDistToMouse < influenceRadius) {
+                    // Calculate normalized distance from center for trailing
+                    const distFromCenter = Math.sqrt(
+                        original.x * original.x +
+                        original.y * original.y +
+                        original.z * original.z
+                    );
+                    const normalizedDist = distFromCenter / this.size;
+                    const softness = 0.6 + normalizedDist * 0.4;
+
                     const vertexDir = new THREE.Vector3()
                         .subVectors(mouseWorldPos, worldPos)
                         .normalize();
 
                     const vertexFalloff = Math.max(0, 1 - vertexDistToMouse / influenceRadius);
-                    const vertexForce = vertexDir.multiplyScalar(vertexFalloff * influenceStrength * deltaTime * 0.5);
+
+                    // Add soft, flowing influence like fabric being pulled
+                    const vertexForce = vertexDir.multiplyScalar(
+                        vertexFalloff * influenceStrength * deltaTime * 0.4 * softness
+                    );
+
+                    // Add wave effect that propagates through the mesh
+                    const wave = Math.sin(
+                        this.time * 5 +
+                        normalizedDist * Math.PI * 2 +
+                        vertexFalloff * Math.PI
+                    ) * vertexFalloff * 0.1;
 
                     this.velocities[i].add(vertexForce);
+                    this.velocities[i].y += wave * influenceStrength * deltaTime;
                 }
             }
         }
@@ -425,7 +529,7 @@ class ParticleNet {
 
             this.mesh.position.add(force);
 
-            // Apply to vertices
+            // Apply to vertices with fabric ripple effect
             const positions = this.geometry.attributes.position;
             for (let i = 0; i < positions.count; i++) {
                 const pos = new THREE.Vector3(
@@ -433,19 +537,46 @@ class ParticleNet {
                     positions.getY(i),
                     positions.getZ(i)
                 );
+                const original = this.originalPositions[i];
 
                 const worldPos = pos.clone().applyMatrix4(this.mesh.matrixWorld);
                 const vertexDistToBurst = worldPos.distanceTo(burstPos);
 
                 if (vertexDistToBurst < burstRadius) {
+                    // Calculate distance from center for trailing behavior
+                    const distFromCenter = Math.sqrt(
+                        original.x * original.x +
+                        original.y * original.y +
+                        original.z * original.z
+                    );
+                    const normalizedDist = distFromCenter / this.size;
+
                     const vertexDir = new THREE.Vector3()
                         .subVectors(worldPos, burstPos)
                         .normalize();
 
                     const vertexFalloff = Math.max(0, 1 - vertexDistToBurst / burstRadius);
-                    const vertexForce = vertexDir.multiplyScalar(vertexFalloff * burstStrength * 2);
+
+                    // Softer burst with trailing
+                    const trailingFactor = 0.7 + normalizedDist * 0.3;
+                    const vertexForce = vertexDir.multiplyScalar(
+                        vertexFalloff * burstStrength * 1.8 * trailingFactor
+                    );
+
+                    // Add ripple wave that spreads through fabric
+                    const rippleWave = Math.sin(
+                        vertexDistToBurst * 0.5 +
+                        this.time * 8
+                    ) * vertexFalloff * burstStrength * 0.3;
+
+                    const perpendicular = new THREE.Vector3(
+                        -vertexDir.y,
+                        vertexDir.x,
+                        vertexDir.z * 0.5
+                    ).normalize();
 
                     this.velocities[i].add(vertexForce);
+                    this.velocities[i].add(perpendicular.multiplyScalar(rippleWave));
                 }
             }
         }
