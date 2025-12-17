@@ -279,10 +279,19 @@ class ParticleNet {
         // Get source positions
         const sourcePositions = this.geometry.attributes.position.array;
 
-        // Safety check for empty geometries
+        // Enhanced safety checks for geometry validation
         if (!sourcePositions || sourcePositions.length === 0 || !targetPositions || targetPositions.length === 0) {
             console.error(`Mesh ${this.meshId} has empty geometry, aborting morph`);
             // Clean up temporary geometries
+            targetBaseGeometry.dispose();
+            targetWireframe.dispose();
+            this.isMorphing = false;
+            return;
+        }
+
+        // Additional validation: Ensure geometry has proper attributes
+        if (!this.geometry || !this.geometry.attributes || !this.geometry.attributes.position) {
+            console.error(`Mesh ${this.meshId} has invalid geometry structure, aborting morph`);
             targetBaseGeometry.dispose();
             targetWireframe.dispose();
             this.isMorphing = false;
@@ -392,9 +401,12 @@ class ParticleNet {
             // PERFORMANCE OPTIMIZATION: Only update the actual vertex count, not padded values
             const eased = this.easeInOutCubic(this.morphProgress);
             const positions = this.geometry.attributes.position;
-            const arrayLength = this.sourcePositions.length;
 
-            // Update positions in place
+            // CRITICAL FIX: Ensure we don't write beyond the actual geometry buffer
+            // Use the minimum of sourcePositions length and actual buffer length
+            const arrayLength = Math.min(this.sourcePositions.length, positions.array.length);
+
+            // Update positions in place (safe bounds)
             for (let i = 0; i < arrayLength; i++) {
                 positions.array[i] = this.sourcePositions[i] +
                     (this.targetPositions[i] - this.sourcePositions[i]) * eased;
