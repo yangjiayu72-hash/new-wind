@@ -1034,7 +1034,8 @@ const handTrackingState = {
     gestureStartTime: 0,
     gestureDuration: 3.0,  // 3 seconds persistence
     gestureTargetForce: new THREE.Vector3(0, 0, 0),
-    detectionThreshold: 0.005  // Lower threshold for more sensitive detection
+    detectionThreshold: 0.005,  // Lower threshold for more sensitive detection
+    lastUIUpdate: 0  // Timestamp for throttling UI updates
 };
 
 // Vortex animation state
@@ -1314,7 +1315,8 @@ function detectGesture() {
         }
 
         // If a gesture is detected, activate it for 3 seconds
-        if (detectedGesture) {
+        // CRITICAL: Only activate if no gesture is currently active (prevent timer reset)
+        if (detectedGesture && !handTrackingState.activeGesture) {
             handTrackingState.currentGesture = detectedGesture;
             handTrackingState.activeGesture = detectedGesture;
             handTrackingState.gestureStartTime = currentTime;
@@ -1341,13 +1343,24 @@ function updateGestureForces(currentTime) {
             const progress = elapsed / handTrackingState.gestureDuration;
             const easing = 1 - Math.pow(progress, 2); // Ease-out quadratic
 
-            // Apply sustained force based on target
-            const sustainedForce = handTrackingState.gestureTargetForce.clone().multiplyScalar(easing * 0.8);
+            // CRITICAL FIX: Set force instead of adding (prevent infinite accumulation)
+            // Add a small sustained force each frame instead of accumulating
+            const sustainedForce = handTrackingState.gestureTargetForce.clone().multiplyScalar(easing * 0.15);
             handTrackingState.gestureForce.add(sustainedForce);
 
-            // Keep UI active
-            gestureIndicator.textContent = `Gesture: ${handTrackingState.activeGesture} (${(handTrackingState.gestureDuration - elapsed).toFixed(1)}s)`;
-            gestureIndicator.classList.add('active');
+            // Safety check: Limit maximum force magnitude to prevent runaway
+            const maxForce = 50.0;
+            if (handTrackingState.gestureForce.length() > maxForce) {
+                handTrackingState.gestureForce.normalize().multiplyScalar(maxForce);
+            }
+
+            // Throttled UI update: only update 10 times per second to prevent DOM thrashing
+            const updateInterval = 0.1; // 100ms
+            if (!handTrackingState.lastUIUpdate || (currentTime - handTrackingState.lastUIUpdate) >= updateInterval) {
+                gestureIndicator.textContent = `Gesture: ${handTrackingState.activeGesture} (${(handTrackingState.gestureDuration - elapsed).toFixed(1)}s)`;
+                gestureIndicator.classList.add('active');
+                handTrackingState.lastUIUpdate = currentTime;
+            }
         } else {
             // Gesture duration expired - clear active gesture
             handTrackingState.activeGesture = null;
