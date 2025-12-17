@@ -18,6 +18,126 @@ const screenShakeState = {
     decay: 0.95
 };
 
+// Raycaster for click detection
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+// Geometry tracking for uniqueness
+const geometryTracker = {
+    usedGeometries: new Map(), // meshId -> geometryType
+    availableTypes: []
+};
+
+// Procedural geometry generators
+const geometryGenerators = {
+    sphere: (size) => {
+        const geometry = new THREE.IcosahedronGeometry(size, 1);
+        return geometry;
+    },
+
+    cube: (size) => {
+        const geometry = new THREE.BoxGeometry(size, size, size, 2, 2, 2);
+        // Add some randomness to vertices
+        const positions = geometry.attributes.position;
+        for (let i = 0; i < positions.count; i++) {
+            const noise = (Math.random() - 0.5) * 0.2;
+            positions.setXYZ(
+                i,
+                positions.getX(i) * (1 + noise),
+                positions.getY(i) * (1 + noise),
+                positions.getZ(i) * (1 + noise)
+            );
+        }
+        return geometry;
+    },
+
+    torus: (size) => {
+        const geometry = new THREE.TorusGeometry(size * 0.6, size * 0.3, 8, 12);
+        return geometry;
+    },
+
+    cone: (size) => {
+        const geometry = new THREE.ConeGeometry(size * 0.7, size * 1.5, 8, 3);
+        return geometry;
+    },
+
+    cylinder: (size) => {
+        const geometry = new THREE.CylinderGeometry(size * 0.6, size * 0.6, size * 1.2, 8, 3);
+        return geometry;
+    },
+
+    octahedron: (size) => {
+        const geometry = new THREE.OctahedronGeometry(size, 1);
+        return geometry;
+    },
+
+    torusKnot: (size) => {
+        const geometry = new THREE.TorusKnotGeometry(size * 0.5, size * 0.2, 50, 8);
+        return geometry;
+    },
+
+    dodecahedron: (size) => {
+        const geometry = new THREE.DodecahedronGeometry(size, 0);
+        return geometry;
+    },
+
+    tetrahedron: (size) => {
+        const geometry = new THREE.TetrahedronGeometry(size, 0);
+        return geometry;
+    },
+
+    blob: (size) => {
+        const geometry = new THREE.IcosahedronGeometry(size, 1);
+        const positions = geometry.attributes.position;
+        for (let i = 0; i < positions.count; i++) {
+            const noise = Math.random() * 0.5 + 0.7;
+            positions.setXYZ(
+                i,
+                positions.getX(i) * noise,
+                positions.getY(i) * noise,
+                positions.getZ(i) * noise
+            );
+        }
+        return geometry;
+    }
+};
+
+// Initialize available geometry types
+geometryTracker.availableTypes = Object.keys(geometryGenerators);
+
+// Get random color
+function getRandomColor() {
+    const colors = [
+        0x00ffff, // cyan
+        0xff00ff, // magenta
+        0xffff00, // yellow
+        0x00ff00, // green
+        0xff0000, // red
+        0x0000ff, // blue
+        0xff8800, // orange
+        0x8800ff, // purple
+        0x00ff88, // mint
+        0xff0088  // pink
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
+}
+
+// Get unique geometry type
+function getUniqueGeometryType(excludeTypes = []) {
+    const available = geometryTracker.availableTypes.filter(
+        type => !excludeTypes.includes(type)
+    );
+
+    if (available.length === 0) {
+        // If all types used, allow reuse
+        return geometryTracker.availableTypes[
+            Math.floor(Math.random() * geometryTracker.availableTypes.length)
+        ];
+    }
+
+    return available[Math.floor(Math.random() * available.length)];
+}
+
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -39,11 +159,12 @@ const windState = {
 
 // Particle Network Class
 class ParticleNet {
-    constructor(position, size, density) {
+    constructor(position, size, density, geometryType, meshId) {
         this.basePosition = position.clone();
         this.size = size;
         this.density = density;
         this.time = Math.random() * 1000;
+        this.meshId = meshId;
 
         // Idle animation parameters
         this.driftSpeed = new THREE.Vector3(
@@ -58,6 +179,19 @@ class ParticleNet {
             (Math.random() - 0.5) * 0.005,
             (Math.random() - 0.5) * 0.005
         );
+
+        // Geometry and color
+        this.currentGeometryType = geometryType;
+        this.currentColor = getRandomColor();
+
+        // Morphing state
+        this.isMorphing = false;
+        this.morphProgress = 0;
+        this.morphDuration = 1.0; // seconds
+        this.sourcePositions = null;
+        this.targetPositions = null;
+        this.sourceColor = null;
+        this.targetColor = null;
 
         // Create mesh structure
         this.createMesh();
@@ -77,71 +211,15 @@ class ParticleNet {
     }
 
     createMesh() {
-        const geometry = new THREE.BufferGeometry();
-        const vertices = [];
-        const indices = [];
+        // Generate geometry based on type
+        const baseGeometry = geometryGenerators[this.currentGeometryType](this.size);
 
-        // Create grid of vertices
-        const gridSize = Math.floor(4 + this.density * 3);
-        const step = this.size / gridSize;
-        const vertexMap = new Map();
+        // Create wireframe geometry
+        const geometry = new THREE.WireframeGeometry(baseGeometry);
 
-        let vertexIndex = 0;
-
-        // Generate vertices in a spherical/blob shape
-        for (let i = 0; i <= gridSize; i++) {
-            for (let j = 0; j <= gridSize; j++) {
-                for (let k = 0; k <= gridSize; k++) {
-                    const x = (i - gridSize / 2) * step;
-                    const y = (j - gridSize / 2) * step;
-                    const z = (k - gridSize / 2) * step;
-
-                    // Add some randomness and spherical shaping
-                    const dist = Math.sqrt(x * x + y * y + z * z);
-                    const maxDist = this.size * 0.6;
-
-                    if (dist < maxDist) {
-                        const noise = (Math.random() - 0.5) * 0.3;
-                        vertices.push(x + noise, y + noise, z + noise);
-                        vertexMap.set(`${i},${j},${k}`, vertexIndex);
-                        vertexIndex++;
-                    }
-                }
-            }
-        }
-
-        // Create connections between nearby vertices
-        const positions = new Float32Array(vertices);
-        const tempGeometry = new THREE.BufferGeometry();
-        tempGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-        for (let i = 0; i < positions.length / 3; i++) {
-            const p1 = new THREE.Vector3(
-                positions[i * 3],
-                positions[i * 3 + 1],
-                positions[i * 3 + 2]
-            );
-
-            for (let j = i + 1; j < positions.length / 3; j++) {
-                const p2 = new THREE.Vector3(
-                    positions[j * 3],
-                    positions[j * 3 + 1],
-                    positions[j * 3 + 2]
-                );
-
-                const distance = p1.distanceTo(p2);
-                if (distance < step * 2.0) {
-                    indices.push(i, j);
-                }
-            }
-        }
-
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setIndex(indices);
-
-        // Create material with thin lines
+        // Create material
         const material = new THREE.LineBasicMaterial({
-            color: 0x00ffff,
+            color: this.currentColor,
             transparent: true,
             opacity: 0.6,
             linewidth: 1
@@ -150,8 +228,129 @@ class ParticleNet {
         // Create mesh
         this.mesh = new THREE.LineSegments(geometry, material);
         this.mesh.position.copy(this.basePosition);
+        this.mesh.userData.particleNet = this;
         this.geometry = geometry;
         this.material = material;
+
+        // Store in tracker
+        geometryTracker.usedGeometries.set(this.meshId, this.currentGeometryType);
+    }
+
+    morphToNewShape(newGeometryType, newColor) {
+        if (this.isMorphing) return; // Already morphing
+
+        // Get currently used geometry types (excluding this mesh)
+        const usedTypes = Array.from(geometryTracker.usedGeometries.values())
+            .filter((type, index) => {
+                const keys = Array.from(geometryTracker.usedGeometries.keys());
+                return keys[index] !== this.meshId;
+            });
+
+        // Get unique geometry type
+        const finalGeometryType = newGeometryType || getUniqueGeometryType(usedTypes);
+
+        // Start morphing
+        this.isMorphing = true;
+        this.morphProgress = 0;
+        this.sourceColor = new THREE.Color(this.material.color);
+        this.targetColor = new THREE.Color(newColor);
+
+        // Generate target geometry
+        const targetBaseGeometry = geometryGenerators[finalGeometryType](this.size);
+        const targetWireframe = new THREE.WireframeGeometry(targetBaseGeometry);
+        const targetPositions = targetWireframe.attributes.position.array;
+
+        // Get source positions
+        const sourcePositions = this.geometry.attributes.position.array;
+
+        // Match vertex counts by interpolating or truncating
+        const maxCount = Math.max(sourcePositions.length, targetPositions.length);
+        this.sourcePositions = new Float32Array(maxCount);
+        this.targetPositions = new Float32Array(maxCount);
+
+        // Copy source positions
+        for (let i = 0; i < sourcePositions.length; i++) {
+            this.sourcePositions[i] = sourcePositions[i];
+        }
+
+        // Fill remaining with last position if source is smaller
+        for (let i = sourcePositions.length; i < maxCount; i++) {
+            this.sourcePositions[i] = sourcePositions[sourcePositions.length - 1];
+        }
+
+        // Copy target positions
+        for (let i = 0; i < targetPositions.length; i++) {
+            this.targetPositions[i] = targetPositions[i];
+        }
+
+        // Fill remaining with last position if target is smaller
+        for (let i = targetPositions.length; i < maxCount; i++) {
+            this.targetPositions[i] = targetPositions[targetPositions.length - 1];
+        }
+
+        // Update geometry type tracker
+        geometryTracker.usedGeometries.set(this.meshId, finalGeometryType);
+        this.currentGeometryType = finalGeometryType;
+
+        console.log(`Morphing mesh ${this.meshId} from ${this.currentGeometryType} to ${finalGeometryType}`);
+    }
+
+    updateMorphing(deltaTime) {
+        if (!this.isMorphing) return;
+
+        this.morphProgress += deltaTime / this.morphDuration;
+
+        if (this.morphProgress >= 1.0) {
+            // Morphing complete
+            this.morphProgress = 1.0;
+            this.isMorphing = false;
+
+            // Create final geometry
+            const finalBaseGeometry = geometryGenerators[this.currentGeometryType](this.size);
+            const finalWireframe = new THREE.WireframeGeometry(finalBaseGeometry);
+
+            // Update geometry
+            this.geometry.dispose();
+            this.geometry = finalWireframe;
+            this.mesh.geometry = this.geometry;
+
+            // Update material color
+            this.material.color.copy(this.targetColor);
+            this.currentColor = this.targetColor.getHex();
+
+            // Update original positions for wind physics
+            this.originalPositions = [];
+            const positions = this.geometry.attributes.position;
+            for (let i = 0; i < positions.count; i++) {
+                this.originalPositions.push(new THREE.Vector3(
+                    positions.getX(i),
+                    positions.getY(i),
+                    positions.getZ(i)
+                ));
+            }
+
+            console.log(`Morphing complete for mesh ${this.meshId}`);
+        } else {
+            // Interpolate positions
+            const eased = this.easeInOutCubic(this.morphProgress);
+            const positions = this.geometry.attributes.position;
+            const newPositions = new Float32Array(this.sourcePositions.length);
+
+            for (let i = 0; i < this.sourcePositions.length; i++) {
+                newPositions[i] = this.sourcePositions[i] + (this.targetPositions[i] - this.sourcePositions[i]) * eased;
+            }
+
+            // Update geometry
+            positions.array = newPositions;
+            positions.needsUpdate = true;
+
+            // Interpolate color
+            this.material.color.lerpColors(this.sourceColor, this.targetColor, eased);
+        }
+    }
+
+    easeInOutCubic(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
 
     updateIdle(deltaTime) {
@@ -260,9 +459,12 @@ class ParticleNet {
     }
 }
 
-// Create particle networks
+// Create particle networks with unique geometries
 const particleNets = [];
 const numNets = 30;
+
+// Track which geometry types are used
+const usedGeometryTypes = [];
 
 for (let i = 0; i < numNets; i++) {
     const position = new THREE.Vector3(
@@ -274,12 +476,45 @@ for (let i = 0; i < numNets; i++) {
     const size = 2 + Math.random() * 4;
     const density = 0.3 + Math.random() * 0.7;
 
-    const net = new ParticleNet(position, size, density);
+    // Get unique geometry type
+    const geometryType = getUniqueGeometryType(usedGeometryTypes);
+    usedGeometryTypes.push(geometryType);
+
+    const net = new ParticleNet(position, size, density, geometryType, i);
     particleNets.push(net);
     scene.add(net.mesh);
 }
 
+console.log(`Created ${numNets} meshes with unique geometries`);
+
+
 // Grid and black hole removed - only 3D particle meshes remain
+
+// Click detection for mesh morphing
+document.addEventListener('click', (event) => {
+    // Update mouse position
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    // Raycast to detect clicked mesh
+    raycaster.setFromCamera(mouse, camera);
+    const meshes = particleNets.map(net => net.mesh);
+    const intersects = raycaster.intersectObjects(meshes);
+
+    if (intersects.length > 0) {
+        const clickedMesh = intersects[0].object;
+        const particleNet = clickedMesh.userData.particleNet;
+
+        if (particleNet && !particleNet.isMorphing) {
+            // Morph to new shape with new color
+            const newColor = getRandomColor();
+            particleNet.morphToNewShape(null, newColor);
+            console.log(`Clicked mesh ${particleNet.meshId} - morphing to new shape`);
+        }
+    }
+});
+
 
 // Keyboard controls
 document.addEventListener('keydown', (e) => {
@@ -355,6 +590,9 @@ function animate() {
 
         // Update all particle networks
         particleNets.forEach(net => {
+            // Update morphing animation
+            net.updateMorphing(deltaTime);
+
             // Prioritize hand gestures over keyboard wind
             if (hasGestureForce) {
                 const gestureDirection = handTrackingState.gestureForce.clone().normalize();
