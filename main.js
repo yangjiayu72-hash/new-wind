@@ -12,18 +12,11 @@ const camera = new THREE.PerspectiveCamera(
 );
 camera.position.z = 50;
 
-// Grid and game state
-const gridState = {
-    isAbnormal: false,
-    abnormalCell: null,
-    cells: [],
-    blackHole: null,
-    screenShakeIntensity: 0,
-    screenShakeDecay: 0.95
+// Screen shake state
+const screenShakeState = {
+    intensity: 0,
+    decay: 0.95
 };
-
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -286,134 +279,7 @@ for (let i = 0; i < numNets; i++) {
     scene.add(net.mesh);
 }
 
-// Create Grid System
-class GridCell {
-    constructor(x, y, gridX, gridY) {
-        this.gridX = gridX;
-        this.gridY = gridY;
-        this.isAbnormal = false;
-
-        const geometry = new THREE.PlaneGeometry(8, 8);
-        const material = new THREE.MeshBasicMaterial({
-            color: 0x00ffff,
-            transparent: true,
-            opacity: 0.15,
-            side: THREE.DoubleSide,
-            wireframe: false
-        });
-
-        this.mesh = new THREE.Mesh(geometry, material);
-        this.mesh.position.set(x, y, -10);
-
-        // Add border
-        const borderGeometry = new THREE.EdgesGeometry(geometry);
-        const borderMaterial = new THREE.LineBasicMaterial({
-            color: 0x00ffff,
-            transparent: true,
-            opacity: 0.4
-        });
-        this.border = new THREE.LineSegments(borderGeometry, borderMaterial);
-        this.border.position.copy(this.mesh.position);
-
-        this.mesh.userData = { cell: this };
-        this.originalColor = 0x00ffff;
-        this.pulseTime = 0;
-    }
-
-    makeAbnormal() {
-        this.isAbnormal = true;
-        this.mesh.material.color.setHex(0xffff00);
-        this.mesh.material.opacity = 0.4;
-        this.border.material.color.setHex(0xffff00);
-        this.border.material.opacity = 0.8;
-    }
-
-    makeRed() {
-        if (!this.isAbnormal) {
-            this.mesh.material.color.setHex(0xff0000);
-            this.mesh.material.opacity = 0.3;
-            this.border.material.color.setHex(0xff0000);
-            this.border.material.opacity = 0.6;
-        }
-    }
-
-    restore() {
-        this.mesh.material.color.setHex(this.originalColor);
-        this.mesh.material.opacity = 0.15;
-        this.border.material.color.setHex(this.originalColor);
-        this.border.material.opacity = 0.4;
-        this.isAbnormal = false;
-    }
-
-    update(deltaTime) {
-        if (this.isAbnormal) {
-            this.pulseTime += deltaTime * 3;
-            const pulse = Math.sin(this.pulseTime) * 0.3 + 0.5;
-            this.mesh.material.opacity = 0.2 + pulse * 0.3;
-            this.mesh.scale.set(1 + pulse * 0.1, 1 + pulse * 0.1, 1);
-        }
-    }
-}
-
-function createGrid() {
-    const gridSize = 5;
-    const spacing = 10;
-    const startX = -(gridSize - 1) * spacing / 2;
-    const startY = -(gridSize - 1) * spacing / 2;
-
-    for (let i = 0; i < gridSize; i++) {
-        for (let j = 0; j < gridSize; j++) {
-            const x = startX + i * spacing;
-            const y = startY + j * spacing;
-            const cell = new GridCell(x, y, i, j);
-            gridState.cells.push(cell);
-            scene.add(cell.mesh);
-            scene.add(cell.border);
-        }
-    }
-
-    // Select random abnormal cell
-    const randomIndex = Math.floor(Math.random() * gridState.cells.length);
-    gridState.abnormalCell = gridState.cells[randomIndex];
-    gridState.abnormalCell.makeAbnormal();
-}
-
-// Create Black Hole
-function createBlackHole() {
-    const geometry = new THREE.SphereGeometry(1.5, 32, 32);
-    const material = new THREE.MeshBasicMaterial({
-        color: 0x000000,
-        transparent: true,
-        opacity: 0
-    });
-
-    const blackHole = new THREE.Mesh(geometry, material);
-    blackHole.position.z = -5;
-
-    // Add visual ring effect
-    const ringGeometry = new THREE.RingGeometry(1.5, 2.5, 32);
-    const ringMaterial = new THREE.MeshBasicMaterial({
-        color: 0x8800ff,
-        transparent: true,
-        opacity: 0,
-        side: THREE.DoubleSide
-    });
-
-    const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-    blackHole.add(ring);
-
-    blackHole.userData = {
-        ring: ring,
-        active: false,
-        rotationSpeed: 0
-    };
-
-    scene.add(blackHole);
-    gridState.blackHole = blackHole;
-}
-
-createGrid();
-createBlackHole();
+// Grid and black hole removed - only 3D particle meshes remain
 
 // Keyboard controls
 document.addEventListener('keydown', (e) => {
@@ -464,118 +330,7 @@ function updateWindDirection() {
     }
 }
 
-// Mouse/Touch event handlers
-function updateMousePosition(event) {
-    const rect = renderer.domElement.getBoundingClientRect();
-    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-}
-
-document.addEventListener('mousemove', (event) => {
-    updateMousePosition(event);
-
-    // Update black hole position
-    if (gridState.blackHole) {
-        raycaster.setFromCamera(mouse, camera);
-        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 10);
-        const intersectPoint = new THREE.Vector3();
-        raycaster.ray.intersectPlane(plane, intersectPoint);
-
-        if (intersectPoint) {
-            gridState.blackHole.position.x = intersectPoint.x;
-            gridState.blackHole.position.y = intersectPoint.y;
-        }
-    }
-});
-
-document.addEventListener('click', (event) => {
-    updateMousePosition(event);
-
-    raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObjects(
-        gridState.cells.map(cell => cell.mesh)
-    );
-
-    if (intersects.length > 0) {
-        const clickedCell = intersects[0].object.userData.cell;
-
-        if (clickedCell.isAbnormal && !gridState.isAbnormal) {
-            // Trigger abnormal state
-            gridState.isAbnormal = true;
-            gridState.screenShakeIntensity = 5;
-
-            // Turn all other cells red
-            gridState.cells.forEach(cell => {
-                if (!cell.isAbnormal) {
-                    cell.makeRed();
-                }
-            });
-
-            // Activate black hole
-            gridState.blackHole.userData.active = true;
-            gridState.blackHole.material.opacity = 0.9;
-            gridState.blackHole.userData.ring.material.opacity = 0.6;
-            gridState.blackHole.userData.rotationSpeed = 5;
-
-            console.log('Abnormal state activated! Use black hole to absorb the yellow cell.');
-        }
-    }
-});
-
-// Space bar to activate/deactivate black hole manually
-document.addEventListener('keydown', (event) => {
-    if (event.code === 'Space' && gridState.isAbnormal) {
-        event.preventDefault();
-        const blackHole = gridState.blackHole;
-
-        // Check if black hole is near abnormal cell
-        const distance = blackHole.position.distanceTo(
-            gridState.abnormalCell.mesh.position
-        );
-
-        if (distance < 5) {
-            // Absorb the abnormal cell
-            absorbAbnormalCell();
-        }
-    }
-});
-
-function absorbAbnormalCell() {
-    // Restore all cells
-    gridState.cells.forEach(cell => cell.restore());
-
-    // Deactivate black hole
-    gridState.blackHole.userData.active = false;
-    gridState.blackHole.material.opacity = 0;
-    gridState.blackHole.userData.ring.material.opacity = 0;
-    gridState.blackHole.userData.rotationSpeed = 0;
-
-    // Reset state
-    gridState.isAbnormal = false;
-    gridState.screenShakeIntensity = 0;
-
-    // Select new abnormal cell
-    const randomIndex = Math.floor(Math.random() * gridState.cells.length);
-    gridState.abnormalCell = gridState.cells[randomIndex];
-    gridState.abnormalCell.makeAbnormal();
-
-    console.log('Normal state restored! New abnormal cell selected.');
-}
-
-// Check for black hole absorption continuously
-function checkBlackHoleAbsorption() {
-    if (gridState.isAbnormal && gridState.blackHole.userData.active) {
-        const blackHole = gridState.blackHole;
-        const distance = blackHole.position.distanceTo(
-            gridState.abnormalCell.mesh.position
-        );
-
-        // Auto-absorb when very close
-        if (distance < 3) {
-            absorbAbnormalCell();
-        }
-    }
-}
+// Mouse/Touch event handlers removed - grid interaction removed
 
 // Animation loop
 const clock = new THREE.Clock();
@@ -617,60 +372,20 @@ function animate() {
             }
         });
 
-        // Apply gesture forces to grid cells
-        if (hasGestureForce) {
-            gridState.cells.forEach(cell => {
-                const force = handTrackingState.gestureForce.clone().multiplyScalar(0.02);
-                cell.mesh.position.x += force.x * deltaTime;
-                cell.mesh.position.y += force.y * deltaTime;
-                cell.border.position.copy(cell.mesh.position);
-            });
-        } else {
-            // Restore grid cells to original positions
-            gridState.cells.forEach(cell => {
-                const gridSize = 5;
-                const spacing = 10;
-                const startX = -(gridSize - 1) * spacing / 2;
-                const startY = -(gridSize - 1) * spacing / 2;
-                const targetX = startX + cell.gridX * spacing;
-                const targetY = startY + cell.gridY * spacing;
-
-                cell.mesh.position.x += (targetX - cell.mesh.position.x) * deltaTime * 2;
-                cell.mesh.position.y += (targetY - cell.mesh.position.y) * deltaTime * 2;
-                cell.border.position.copy(cell.mesh.position);
-            });
-        }
-
         // Decay gesture force
         handTrackingState.gestureForce.multiplyScalar(handTrackingState.forceDecay);
     }
-
-    // Update grid cells
-    gridState.cells.forEach(cell => cell.update(deltaTime));
-
-    // Update black hole
-    if (gridState.blackHole && gridState.blackHole.userData.active) {
-        const ring = gridState.blackHole.userData.ring;
-        ring.rotation.z += gridState.blackHole.userData.rotationSpeed * deltaTime;
-
-        // Pulsing effect
-        const pulse = Math.sin(clock.elapsedTime * 4) * 0.1 + 1;
-        ring.scale.set(pulse, pulse, 1);
-    }
-
-    // Check for black hole absorption
-    checkBlackHoleAbsorption();
 
     // Screen shake effect
     let cameraOffsetX = 0;
     let cameraOffsetY = 0;
 
-    if (gridState.screenShakeIntensity > 0.1) {
-        cameraOffsetX = (Math.random() - 0.5) * gridState.screenShakeIntensity;
-        cameraOffsetY = (Math.random() - 0.5) * gridState.screenShakeIntensity;
-        gridState.screenShakeIntensity *= gridState.screenShakeDecay;
+    if (screenShakeState.intensity > 0.1) {
+        cameraOffsetX = (Math.random() - 0.5) * screenShakeState.intensity;
+        cameraOffsetY = (Math.random() - 0.5) * screenShakeState.intensity;
+        screenShakeState.intensity *= screenShakeState.decay;
     } else {
-        gridState.screenShakeIntensity = 0;
+        screenShakeState.intensity = 0;
     }
 
     // Gentle camera movement with screen shake
@@ -1062,23 +777,6 @@ function applyVortexForce(deltaTime, progress) {
             net.mesh.rotation.z += rotationSpeed * deltaTime * 0.5;
         }
     });
-
-    // Apply to grid cells
-    gridState.cells.forEach(cell => {
-        const cellPos = cell.mesh.position;
-        const offset = new THREE.Vector3().subVectors(cellPos, center);
-        const distance = offset.length();
-
-        if (distance > 0.1) {
-            const tangent = new THREE.Vector3(-offset.y, offset.x, 0).normalize();
-            const pullForce = offset.clone().normalize().multiplyScalar(-0.3 * progress);
-            const rotationForce = tangent.multiplyScalar(rotationSpeed * 0.5);
-
-            const totalForce = pullForce.add(rotationForce);
-            cell.mesh.position.add(totalForce.multiplyScalar(deltaTime));
-            cell.border.position.copy(cell.mesh.position);
-        }
-    });
 }
 
 // Trigger explosion
@@ -1122,30 +820,6 @@ function triggerExplosion() {
 
         // Update base position for future idle animation
         net.basePosition.copy(targetPos);
-    });
-
-    // Apply explosion to grid cells and reset
-    gridState.cells.forEach((cell, index) => {
-        const offset = new THREE.Vector3().subVectors(cell.mesh.position, center);
-        const direction = offset.normalize();
-        const force = direction.multiplyScalar(explosionForce * 0.3);
-
-        cell.mesh.position.add(force.multiplyScalar(0.1));
-
-        // Return to original grid position smoothly
-        const gridSize = 5;
-        const spacing = 10;
-        const startX = -(gridSize - 1) * spacing / 2;
-        const startY = -(gridSize - 1) * spacing / 2;
-        const targetX = startX + cell.gridX * spacing;
-        const targetY = startY + cell.gridY * spacing;
-
-        const startPos = cell.mesh.position.clone();
-        const targetPos = new THREE.Vector3(targetX, targetY, -10);
-
-        animateMeshToPosition(cell.mesh, startPos, targetPos, 0.5, () => {
-            cell.border.position.copy(cell.mesh.position);
-        });
     });
 }
 
