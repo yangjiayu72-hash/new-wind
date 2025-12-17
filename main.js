@@ -51,36 +51,66 @@ const audioSystem = {
         }
     },
 
-    // Create simplified ambient background music
+    // Create mysterious yet calming ambient background music
     createBackgroundMusic() {
         if (!this.context) return;
 
-        // Simplified: Only 2 oscillators for better performance
-        const gainNode = this.context.createGain();
-        gainNode.gain.value = 0.08; // Lower volume
-        gainNode.connect(this.context.destination);
+        // Master gain for overall volume control
+        const masterGain = this.context.createGain();
+        masterGain.gain.value = 0.06; // Subtle, gentle volume
+        masterGain.connect(this.context.destination);
 
-        // Layer 1: Deep bass (60 Hz)
+        // Layer 1: Deep bass drone (55 Hz - A1) - Foundation
         const bass = this.context.createOscillator();
         bass.type = 'sine';
-        bass.frequency.value = 60;
+        bass.frequency.value = 55;
         const bassGain = this.context.createGain();
-        bassGain.gain.value = 0.4;
+        bassGain.gain.value = 0.35;
         bass.connect(bassGain);
-        bassGain.connect(gainNode);
+        bassGain.connect(masterGain);
 
-        // Layer 2: Mid pad (220 Hz)
-        const mid = this.context.createOscillator();
-        mid.type = 'sine';
-        mid.frequency.value = 220;
-        const midGain = this.context.createGain();
-        midGain.gain.value = 0.25;
-        mid.connect(midGain);
-        midGain.connect(gainNode);
+        // Layer 2: Low harmonic (82.5 Hz - E2, perfect fifth) - Depth
+        const lowHarmonic = this.context.createOscillator();
+        lowHarmonic.type = 'triangle';
+        lowHarmonic.frequency.value = 82.5;
+        const lowHarmonicGain = this.context.createGain();
+        lowHarmonicGain.gain.value = 0.28;
+        lowHarmonic.connect(lowHarmonicGain);
+        lowHarmonicGain.connect(masterGain);
+
+        // Layer 3: Mid atmospheric pad (165 Hz - E3) - Body with subtle detuning
+        const midPad = this.context.createOscillator();
+        midPad.type = 'triangle';
+        midPad.frequency.value = 165 + 0.8; // Slight detune for richness
+        const midPadGain = this.context.createGain();
+        midPadGain.gain.value = 0.18;
+        midPad.connect(midPadGain);
+        midPadGain.connect(masterGain);
+
+        // Layer 4: High atmospheric shimmer (330 Hz - E4) - Air and mystery
+        const highShimmer = this.context.createOscillator();
+        highShimmer.type = 'sine';
+        highShimmer.frequency.value = 330 - 1.2; // Slight detune for movement
+        const highShimmerGain = this.context.createGain();
+        highShimmerGain.gain.value = 0.12;
+        highShimmer.connect(highShimmerGain);
+        highShimmerGain.connect(masterGain);
+
+        // Add subtle LFO modulation for breathing, organic feel
+        const lfo = this.context.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.08; // Very slow modulation (12.5 second cycle)
+
+        const lfoGain = this.context.createGain();
+        lfoGain.gain.value = 0.015; // Subtle modulation depth
+
+        lfo.connect(lfoGain);
+        lfoGain.connect(masterGain.gain); // Modulate master volume for gentle breathing
 
         this.backgroundMusic = {
-            oscillators: [bass, mid],
-            gainNode: gainNode
+            oscillators: [bass, lowHarmonic, midPad, highShimmer, lfo],
+            gainNode: masterGain,
+            lfoGain: lfoGain
         };
     },
 
