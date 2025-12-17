@@ -51,67 +51,51 @@ const audioSystem = {
         }
     },
 
-    // Create mysterious yet calming ambient background music
+    // Create simplified ambient background music (optimized for stability)
     createBackgroundMusic() {
         if (!this.context) return;
 
-        // Master gain for overall volume control
-        const masterGain = this.context.createGain();
-        masterGain.gain.value = 0.06; // Subtle, gentle volume
-        masterGain.connect(this.context.destination);
+        try {
+            // Master gain for overall volume control
+            const masterGain = this.context.createGain();
+            masterGain.gain.value = 0.05; // Reduced for stability
+            masterGain.connect(this.context.destination);
 
-        // Layer 1: Deep bass drone (55 Hz - A1) - Foundation
-        const bass = this.context.createOscillator();
-        bass.type = 'sine';
-        bass.frequency.value = 55;
-        const bassGain = this.context.createGain();
-        bassGain.gain.value = 0.35;
-        bass.connect(bassGain);
-        bassGain.connect(masterGain);
+            // Layer 1: Deep bass drone (55 Hz - A1) - Foundation
+            const bass = this.context.createOscillator();
+            bass.type = 'sine';
+            bass.frequency.value = 55;
+            const bassGain = this.context.createGain();
+            bassGain.gain.value = 0.4;
+            bass.connect(bassGain);
+            bassGain.connect(masterGain);
 
-        // Layer 2: Low harmonic (82.5 Hz - E2, perfect fifth) - Depth
-        const lowHarmonic = this.context.createOscillator();
-        lowHarmonic.type = 'triangle';
-        lowHarmonic.frequency.value = 82.5;
-        const lowHarmonicGain = this.context.createGain();
-        lowHarmonicGain.gain.value = 0.28;
-        lowHarmonic.connect(lowHarmonicGain);
-        lowHarmonicGain.connect(masterGain);
+            // Layer 2: Mid harmonic (165 Hz - E3) - Depth and atmosphere
+            const midPad = this.context.createOscillator();
+            midPad.type = 'triangle';
+            midPad.frequency.value = 165;
+            const midPadGain = this.context.createGain();
+            midPadGain.gain.value = 0.25;
+            midPad.connect(midPadGain);
+            midPadGain.connect(masterGain);
 
-        // Layer 3: Mid atmospheric pad (165 Hz - E3) - Body with subtle detuning
-        const midPad = this.context.createOscillator();
-        midPad.type = 'triangle';
-        midPad.frequency.value = 165 + 0.8; // Slight detune for richness
-        const midPadGain = this.context.createGain();
-        midPadGain.gain.value = 0.18;
-        midPad.connect(midPadGain);
-        midPadGain.connect(masterGain);
+            // Layer 3: High shimmer (330 Hz - E4) - Subtle atmosphere
+            const highShimmer = this.context.createOscillator();
+            highShimmer.type = 'sine';
+            highShimmer.frequency.value = 330;
+            const highShimmerGain = this.context.createGain();
+            highShimmerGain.gain.value = 0.15;
+            highShimmer.connect(highShimmerGain);
+            highShimmerGain.connect(masterGain);
 
-        // Layer 4: High atmospheric shimmer (330 Hz - E4) - Air and mystery
-        const highShimmer = this.context.createOscillator();
-        highShimmer.type = 'sine';
-        highShimmer.frequency.value = 330 - 1.2; // Slight detune for movement
-        const highShimmerGain = this.context.createGain();
-        highShimmerGain.gain.value = 0.12;
-        highShimmer.connect(highShimmerGain);
-        highShimmerGain.connect(masterGain);
-
-        // Add subtle LFO modulation for breathing, organic feel
-        const lfo = this.context.createOscillator();
-        lfo.type = 'sine';
-        lfo.frequency.value = 0.08; // Very slow modulation (12.5 second cycle)
-
-        const lfoGain = this.context.createGain();
-        lfoGain.gain.value = 0.015; // Subtle modulation depth
-
-        lfo.connect(lfoGain);
-        lfoGain.connect(masterGain.gain); // Modulate master volume for gentle breathing
-
-        this.backgroundMusic = {
-            oscillators: [bass, lowHarmonic, midPad, highShimmer, lfo],
-            gainNode: masterGain,
-            lfoGain: lfoGain
-        };
+            this.backgroundMusic = {
+                oscillators: [bass, midPad, highShimmer],
+                gainNode: masterGain
+            };
+        } catch (error) {
+            console.warn('Failed to create background music:', error);
+            this.backgroundMusic = { oscillators: [], gainNode: null };
+        }
     },
 
     // Start background music
@@ -138,19 +122,19 @@ const audioSystem = {
         }
     },
 
-    // Optimized click sound with cooldown
+    // STABILITY: Optimized click sound with strict error handling
     playClickSound() {
-        if (!this.isInitialized) return;
-
-        const now = this.context.currentTime;
-
-        // Throttle: Prevent too many rapid sounds
-        if (now - this.lastClickTime < this.clickCooldown) {
-            return;
-        }
-        this.lastClickTime = now;
+        if (!this.isInitialized || !this.context) return;
 
         try {
+            const now = this.context.currentTime;
+
+            // Throttle: Prevent too many rapid sounds
+            if (now - this.lastClickTime < this.clickCooldown) {
+                return;
+            }
+            this.lastClickTime = now;
+
             // Create short-lived oscillator (non-blocking)
             const osc = this.context.createOscillator();
             const gainNode = this.context.createGain();
@@ -160,14 +144,14 @@ const audioSystem = {
 
             // Quick envelope
             gainNode.gain.setValueAtTime(0, now);
-            gainNode.gain.linearRampToValueAtTime(0.2, now + 0.003);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+            gainNode.gain.linearRampToValueAtTime(0.15, now + 0.003);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.06);
 
             osc.connect(gainNode);
             gainNode.connect(this.context.destination);
 
             osc.start(now);
-            osc.stop(now + 0.1); // Shorter duration
+            osc.stop(now + 0.08);
 
         } catch (error) {
             // Silently fail to prevent blocking
@@ -409,35 +393,40 @@ class ParticleNet {
     }
 
     morphToNewShape(newGeometryType, newColor) {
+        // STABILITY: Strict morphing lock to prevent concurrent morphs
         if (this.isMorphing) {
-            console.log(`Mesh ${this.meshId} is already morphing, ignoring click`);
-            return; // Already morphing, prevent concurrent morphs
+            return; // Already morphing, silently ignore to prevent conflicts
         }
 
-        // Get currently used geometry types (excluding this mesh)
-        const usedTypes = Array.from(geometryTracker.usedGeometries.values())
-            .filter((type, index) => {
-                const keys = Array.from(geometryTracker.usedGeometries.keys());
-                return keys[index] !== this.meshId;
-            });
+        try {
+            // Get currently used geometry types (excluding this mesh)
+            const usedTypes = Array.from(geometryTracker.usedGeometries.values())
+                .filter((type, index) => {
+                    const keys = Array.from(geometryTracker.usedGeometries.keys());
+                    return keys[index] !== this.meshId;
+                });
 
-        // Get unique geometry type
-        const finalGeometryType = newGeometryType || getUniqueGeometryType(usedTypes);
+            // Get unique geometry type
+            const finalGeometryType = newGeometryType || getUniqueGeometryType(usedTypes);
 
-        // Don't morph to the same geometry type
-        if (finalGeometryType === this.currentGeometryType) {
-            console.log(`Mesh ${this.meshId} already has geometry type ${finalGeometryType}, selecting different type`);
-            const otherTypes = geometryTracker.availableTypes.filter(t => t !== this.currentGeometryType);
-            if (otherTypes.length === 0) return; // Only one geometry type exists
-            const randomType = otherTypes[Math.floor(Math.random() * otherTypes.length)];
-            return this.morphToNewShape(randomType, newColor); // Recursive call with different type
+            // Don't morph to the same geometry type
+            if (finalGeometryType === this.currentGeometryType) {
+                const otherTypes = geometryTracker.availableTypes.filter(t => t !== this.currentGeometryType);
+                if (otherTypes.length === 0) return; // Only one geometry type exists
+                const randomType = otherTypes[Math.floor(Math.random() * otherTypes.length)];
+                return this.morphToNewShape(randomType, newColor); // Recursive call with different type
+            }
+
+            // Start morphing with lock
+            this.isMorphing = true;
+            this.morphProgress = 0;
+            this.sourceColor = new THREE.Color(this.material.color);
+            this.targetColor = new THREE.Color(newColor);
+        } catch (error) {
+            console.warn(`Morph failed for mesh ${this.meshId}:`, error);
+            this.isMorphing = false; // Release lock on error
+            return;
         }
-
-        // Start morphing
-        this.isMorphing = true;
-        this.morphProgress = 0;
-        this.sourceColor = new THREE.Color(this.material.color);
-        this.targetColor = new THREE.Color(newColor);
 
         // Store the current geometry type before morphing
         const previousGeometryType = this.currentGeometryType;
@@ -447,11 +436,13 @@ class ParticleNet {
         const targetWireframe = new THREE.WireframeGeometry(targetBaseGeometry);
         const targetPositions = targetWireframe.attributes.position.array;
 
-        // CRITICAL: Validate geometry structure BEFORE accessing attributes
+        // STABILITY: Validate geometry structure BEFORE accessing attributes
         if (!this.geometry || !this.geometry.attributes || !this.geometry.attributes.position) {
-            console.error(`Mesh ${this.meshId} has invalid geometry structure, aborting morph`);
-            targetBaseGeometry.dispose();
-            targetWireframe.dispose();
+            console.warn(`Mesh ${this.meshId} has invalid geometry, aborting morph`);
+            try {
+                targetBaseGeometry.dispose();
+                targetWireframe.dispose();
+            } catch (e) {}
             this.isMorphing = false;
             return;
         }
@@ -892,58 +883,57 @@ console.log(`Created anomalous mesh at ID ${anomalousMeshId} (yellow, larger siz
 
 // Grid and black hole removed - only 3D particle meshes remain
 
-// Click detection for mesh morphing and anomalous mesh
+// STABILITY: Click detection with error handling
 document.addEventListener('click', (event) => {
-    // Update mouse position
-    const rect = renderer.domElement.getBoundingClientRect();
-    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    try {
+        // Update mouse position
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-    // Raycast to detect clicked mesh
-    raycaster.setFromCamera(mouse, camera);
-    const meshes = particleNets.map(net => net.mesh);
-    const intersects = raycaster.intersectObjects(meshes);
+        // Raycast to detect clicked mesh
+        raycaster.setFromCamera(mouse, camera);
+        const meshes = particleNets.map(net => net.mesh).filter(m => m); // Filter out null meshes
+        const intersects = raycaster.intersectObjects(meshes);
 
-    if (intersects.length > 0) {
-        const clickedMesh = intersects[0].object;
-        const particleNet = clickedMesh.userData.particleNet;
+        if (intersects.length > 0) {
+            const clickedMesh = intersects[0].object;
+            const particleNet = clickedMesh.userData.particleNet;
 
-        if (particleNet) {
-            // Check if anomalous mesh was clicked
-            if (particleNet.meshId === anomalousState.meshId &&
-                !anomalousState.isVibrating &&
-                !anomalousState.blackHoleSpawned) {
-                // Start vibration sequence (only once)
-                anomalousState.isVibrating = true;
-                anomalousState.vibrationStartTime = performance.now() / 1000;
+            if (particleNet) {
+                // Check if anomalous mesh was clicked
+                if (particleNet.meshId === anomalousState.meshId &&
+                    !anomalousState.isVibrating &&
+                    !anomalousState.blackHoleSpawned) {
+                    // Start vibration sequence (only once)
+                    anomalousState.isVibrating = true;
+                    anomalousState.vibrationStartTime = performance.now() / 1000;
 
-                // Play click sound for anomalous mesh
-                audioSystem.playClickSound();
-
-                console.log('Anomalous mesh clicked! Starting vibration sequence...');
-            } else if (!particleNet.isMorphing && particleNet.meshId !== anomalousState.meshId) {
-                // Normal mesh interaction
-                if (!particleNet.hasBeenClicked) {
-                    // First click: Apply both color and geometry change
-                    const newColor = getRandomColor();
-                    particleNet.morphToNewShape(null, newColor);
-                    particleNet.hasBeenClicked = true;
-
-                    // Play click sound
+                    // Play click sound for anomalous mesh
                     audioSystem.playClickSound();
+                } else if (!particleNet.isMorphing && particleNet.meshId !== anomalousState.meshId) {
+                    // Normal mesh interaction
+                    if (!particleNet.hasBeenClicked) {
+                        // First click: Apply both color and geometry change
+                        const newColor = getRandomColor();
+                        particleNet.morphToNewShape(null, newColor);
+                        particleNet.hasBeenClicked = true;
 
-                    console.log(`Clicked mesh ${particleNet.meshId} for first time - applying color and geometry`);
-                } else {
-                    // Subsequent clicks: Only change geometry, keep current color
-                    particleNet.morphToNewShape(null, particleNet.currentColor);
+                        // Play click sound
+                        audioSystem.playClickSound();
+                    } else {
+                        // Subsequent clicks: Only change geometry, keep current color
+                        particleNet.morphToNewShape(null, particleNet.currentColor);
 
-                    // Play click sound
-                    audioSystem.playClickSound();
-
-                    console.log(`Clicked mesh ${particleNet.meshId} again - morphing to new geometry`);
+                        // Play click sound
+                        audioSystem.playClickSound();
+                    }
                 }
             }
         }
+    } catch (error) {
+        // STABILITY: Silently handle click errors to prevent disruption
+        console.warn('Click handler error:', error);
     }
 });
 
@@ -1050,20 +1040,26 @@ function updateWindDirection() {
 
 // Mouse/Touch event handlers removed - grid interaction removed
 
-// Animation loop
+// Animation loop with stability safeguards
 const clock = new THREE.Clock();
+let isAnimating = false; // Prevent concurrent animation frames
 
 function animate() {
     requestAnimationFrame(animate);
 
-    const deltaTime = clock.getDelta();
-    const currentTime = clock.elapsedTime;
+    // STABILITY: Prevent concurrent frame execution
+    if (isAnimating) return;
+    isAnimating = true;
 
-    // Update vortex animation (overrides other forces)
-    updateVortexAnimation(currentTime, deltaTime);
+    try {
+        const deltaTime = Math.min(clock.getDelta(), 0.1); // Cap deltaTime to prevent large jumps
+        const currentTime = clock.elapsedTime;
 
-    // Update anomalous mesh vibration sequence
-    if (anomalousState.isVibrating) {
+        // Update vortex animation (overrides other forces)
+        updateVortexAnimation(currentTime, deltaTime);
+
+        // Update anomalous mesh vibration sequence
+        if (anomalousState.isVibrating) {
         const elapsed = currentTime - anomalousState.vibrationStartTime;
 
         if (elapsed < anomalousState.delayDuration) {
@@ -1146,11 +1142,11 @@ function animate() {
             // Update morphing animation
             net.updateMorphing(deltaTime);
 
-            // Prioritize hand gestures over keyboard wind
+            // STABILITY: Prioritize hand gestures over keyboard wind with reduced multipliers
             if (hasGestureForce) {
                 const gestureDirection = handTrackingState.gestureForce.clone().normalize();
-                // Enhanced strength multiplier for faster, more obvious, and more dynamic response
-                const gestureStrength = Math.min(handTrackingState.gestureForce.length() * 1.2, 6.0);
+                // Reduced multipliers for stability while maintaining responsiveness
+                const gestureStrength = Math.min(handTrackingState.gestureForce.length() * 0.9, 4.5);
                 net.applyWind(gestureDirection, gestureStrength, deltaTime);
             } else if (windState.strength > 0.01) {
                 net.applyWind(windState.direction, windState.strength, deltaTime);
@@ -1184,11 +1180,18 @@ function animate() {
     const baseCameraX = Math.sin(clock.elapsedTime * 0.1) * 5;
     const baseCameraY = Math.cos(clock.elapsedTime * 0.15) * 3;
 
-    camera.position.x = baseCameraX + cameraOffsetX;
-    camera.position.y = baseCameraY + cameraOffsetY;
-    camera.lookAt(0, 0, 0);
+        camera.position.x = baseCameraX + cameraOffsetX;
+        camera.position.y = baseCameraY + cameraOffsetY;
+        camera.lookAt(0, 0, 0);
 
-    renderer.render(scene, camera);
+        renderer.render(scene, camera);
+    } catch (error) {
+        // STABILITY: Catch all errors to prevent render loop disruption
+        console.warn('Animation frame error:', error);
+    } finally {
+        // CRITICAL: Always release animation lock
+        isAnimating = false;
+    }
 }
 
 // Handle window resize
@@ -1211,7 +1214,7 @@ const handCanvas = document.getElementById('hand-canvas');
 const handCanvasCtx = handCanvas.getContext('2d');
 const gestureIndicator = document.getElementById('gesture-indicator');
 
-// Hand tracking state
+// Hand tracking state (optimized for stability)
 const handTrackingState = {
     hands: null,
     camera: null,
@@ -1219,8 +1222,8 @@ const handTrackingState = {
     lastHandPosition: null,
     currentHandPosition: null,
     gestureForce: new THREE.Vector3(0, 0, 0),
-    forceDecay: 0.92,  // Enhanced decay for smooth, flowing motion
-    forceSensitivity: 20.0,  // Significantly increased for more obvious visual response
+    forceDecay: 0.94,  // Increased decay for better stability
+    forceSensitivity: 15.0,  // Reduced for stability while maintaining responsiveness
     currentGesture: null,
     isFist: false,
     fistDetected: false,
@@ -1229,8 +1232,8 @@ const handTrackingState = {
     gestureStartTime: 0,
     gestureDuration: 3.0,  // 3 seconds persistence
     gestureTargetForce: new THREE.Vector3(0, 0, 0),
-    detectionThreshold: 0.005,  // Lower threshold for more sensitive detection
-    lastUIUpdate: 0  // Timestamp for throttling UI updates
+    detectionThreshold: 0.005,
+    lastUIUpdate: 0
 };
 
 // Vortex animation state
@@ -1514,43 +1517,39 @@ function detectGesture() {
     }
 }
 
-// Update gesture forces with persistence system
+// STABILITY: Optimized gesture force system with strict bounds
 function updateGestureForces(currentTime) {
-    // Check if we have an active gesture
-    if (handTrackingState.activeGesture && handTrackingState.gestureStartTime > 0) {
-        const elapsed = currentTime - handTrackingState.gestureStartTime;
+    try {
+        // Check if we have an active gesture
+        if (handTrackingState.activeGesture && handTrackingState.gestureStartTime > 0) {
+            const elapsed = currentTime - handTrackingState.gestureStartTime;
 
-        if (elapsed < handTrackingState.gestureDuration) {
-            // Gesture is still active - maintain force
-            // Use easing for smooth force application
-            const progress = elapsed / handTrackingState.gestureDuration;
-            const easing = 1 - Math.pow(progress, 2); // Ease-out quadratic
+            if (elapsed < handTrackingState.gestureDuration) {
+                // Gesture is still active - maintain force
+                const progress = elapsed / handTrackingState.gestureDuration;
+                const easing = 1 - Math.pow(progress, 2); // Ease-out quadratic
 
-            // CRITICAL FIX: Set force instead of adding (prevent infinite accumulation)
-            // Enhanced sustained force for more continuous, flowing movement
-            const sustainedForce = handTrackingState.gestureTargetForce.clone().multiplyScalar(easing * 0.25);
-            handTrackingState.gestureForce.add(sustainedForce);
+                // STABILITY: Simplified force application with strict capping
+                const sustainedForce = handTrackingState.gestureTargetForce.clone().multiplyScalar(easing * 0.2);
+                handTrackingState.gestureForce.add(sustainedForce);
 
-            // Safety check: Limit maximum force magnitude to prevent runaway
-            const maxForce = 50.0;
-            if (handTrackingState.gestureForce.length() > maxForce) {
-                handTrackingState.gestureForce.normalize().multiplyScalar(maxForce);
+                // CRITICAL: Strict force magnitude limit (reduced for stability)
+                const maxForce = 30.0;
+                const currentMagnitude = handTrackingState.gestureForce.length();
+                if (currentMagnitude > maxForce) {
+                    handTrackingState.gestureForce.normalize().multiplyScalar(maxForce);
+                }
+            } else {
+                // Gesture duration expired - clear active gesture
+                handTrackingState.activeGesture = null;
+                handTrackingState.gestureStartTime = 0;
+                handTrackingState.gestureTargetForce.set(0, 0, 0);
             }
-
-            // Throttled UI update: only update 10 times per second to prevent DOM thrashing
-            const updateInterval = 0.1; // 100ms
-            if (!handTrackingState.lastUIUpdate || (currentTime - handTrackingState.lastUIUpdate) >= updateInterval) {
-                handTrackingState.lastUIUpdate = currentTime;
-            }
-        } else {
-            // Gesture duration expired - clear active gesture
-            handTrackingState.activeGesture = null;
-            handTrackingState.gestureStartTime = 0;
-            handTrackingState.gestureTargetForce.set(0, 0, 0);
-            console.log('Gesture persistence ended - returning to default state');
         }
-    } else {
-        // No active gesture - remove UI indicator
+    } catch (error) {
+        // Silently handle errors to prevent render loop disruption
+        handTrackingState.activeGesture = null;
+        handTrackingState.gestureForce.set(0, 0, 0);
     }
 }
 
