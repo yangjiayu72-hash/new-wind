@@ -723,7 +723,7 @@ const handTrackingState = {
 const vortexState = {
     active: false,
     startTime: 0,
-    duration: 3.0, // seconds
+    duration: 6.0, // seconds - extended tornado duration
     vortexCenter: new THREE.Vector3(0, 0, 0),
     rotationSpeed: 5.0,
     explosionForce: 50.0,
@@ -1020,10 +1020,10 @@ function updateVortexAnimation(currentTime, deltaTime) {
     const progress = elapsed / vortexState.duration;
 
     if (elapsed < vortexState.duration) {
-        // Phase 1: Vortex (0-3 seconds)
+        // Phase 1: Vortex (0-6 seconds) - high-speed tornado rotation
         applyVortexForce(deltaTime, progress);
     } else if (elapsed >= vortexState.duration && elapsed < vortexState.duration + 0.01) {
-        // Phase 2: Explosion at exactly 3 seconds
+        // Phase 2: Explosion at exactly 6 seconds
         triggerExplosion();
     } else if (elapsed > vortexState.duration + 0.3) {
         // Phase 3: Reset after flash
