@@ -661,7 +661,7 @@ const usedGeometryTypes = [];
 
 // Default geometry and color for all meshes before interaction
 const defaultGeometry = 'sphere';
-const defaultColor = 0xffffff; // White
+const defaultColor = 0x00ff00; // Fluorescent green
 
 for (let i = 0; i < numNets; i++) {
     const position = new THREE.Vector3(
@@ -679,7 +679,7 @@ for (let i = 0; i < numNets; i++) {
     scene.add(net.mesh);
 }
 
-console.log(`Created ${numNets} meshes with default white spheres (no color/shape variation)`);
+console.log(`Created ${numNets} meshes with default fluorescent green spheres (no color/shape variation)`);
 
 // Create one anomalous mesh with distinct appearance
 const anomalousMeshId = numNets;
