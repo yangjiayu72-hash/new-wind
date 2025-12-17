@@ -584,59 +584,66 @@ function animate() {
     requestAnimationFrame(animate);
 
     const deltaTime = clock.getDelta();
+    const currentTime = clock.elapsedTime;
 
-    // Smooth wind strength transition
-    const strengthDelta = windState.targetStrength - windState.strength;
-    windState.strength += strengthDelta * deltaTime * 5;
+    // Update vortex animation (overrides other forces)
+    updateVortexAnimation(currentTime, deltaTime);
 
-    // Apply hand gesture forces
-    const hasGestureForce = handTrackingState.gestureForce.length() > 0.01;
+    // Only apply normal physics if vortex is not active
+    if (!vortexState.active) {
+        // Smooth wind strength transition
+        const strengthDelta = windState.targetStrength - windState.strength;
+        windState.strength += strengthDelta * deltaTime * 5;
 
-    // Update all particle networks
-    particleNets.forEach(net => {
-        // Prioritize hand gestures over keyboard wind
+        // Apply hand gesture forces
+        const hasGestureForce = handTrackingState.gestureForce.length() > 0.01;
+
+        // Update all particle networks
+        particleNets.forEach(net => {
+            // Prioritize hand gestures over keyboard wind
+            if (hasGestureForce) {
+                const gestureDirection = handTrackingState.gestureForce.clone().normalize();
+                const gestureStrength = Math.min(handTrackingState.gestureForce.length() * 0.3, 2.0);
+                net.applyWind(gestureDirection, gestureStrength, deltaTime);
+            } else if (windState.strength > 0.01) {
+                net.applyWind(windState.direction, windState.strength, deltaTime);
+            } else {
+                net.recover(deltaTime);
+            }
+
+            // Always apply idle animation when no strong forces
+            if (windState.strength < 0.5 && !hasGestureForce) {
+                net.updateIdle(deltaTime);
+            }
+        });
+
+        // Apply gesture forces to grid cells
         if (hasGestureForce) {
-            const gestureDirection = handTrackingState.gestureForce.clone().normalize();
-            const gestureStrength = Math.min(handTrackingState.gestureForce.length() * 0.3, 2.0);
-            net.applyWind(gestureDirection, gestureStrength, deltaTime);
-        } else if (windState.strength > 0.01) {
-            net.applyWind(windState.direction, windState.strength, deltaTime);
+            gridState.cells.forEach(cell => {
+                const force = handTrackingState.gestureForce.clone().multiplyScalar(0.02);
+                cell.mesh.position.x += force.x * deltaTime;
+                cell.mesh.position.y += force.y * deltaTime;
+                cell.border.position.copy(cell.mesh.position);
+            });
         } else {
-            net.recover(deltaTime);
+            // Restore grid cells to original positions
+            gridState.cells.forEach(cell => {
+                const gridSize = 5;
+                const spacing = 10;
+                const startX = -(gridSize - 1) * spacing / 2;
+                const startY = -(gridSize - 1) * spacing / 2;
+                const targetX = startX + cell.gridX * spacing;
+                const targetY = startY + cell.gridY * spacing;
+
+                cell.mesh.position.x += (targetX - cell.mesh.position.x) * deltaTime * 2;
+                cell.mesh.position.y += (targetY - cell.mesh.position.y) * deltaTime * 2;
+                cell.border.position.copy(cell.mesh.position);
+            });
         }
 
-        // Always apply idle animation when no strong forces
-        if (windState.strength < 0.5 && !hasGestureForce) {
-            net.updateIdle(deltaTime);
-        }
-    });
-
-    // Apply gesture forces to grid cells
-    if (hasGestureForce) {
-        gridState.cells.forEach(cell => {
-            const force = handTrackingState.gestureForce.clone().multiplyScalar(0.02);
-            cell.mesh.position.x += force.x * deltaTime;
-            cell.mesh.position.y += force.y * deltaTime;
-            cell.border.position.copy(cell.mesh.position);
-        });
-    } else {
-        // Restore grid cells to original positions
-        gridState.cells.forEach(cell => {
-            const gridSize = 5;
-            const spacing = 10;
-            const startX = -(gridSize - 1) * spacing / 2;
-            const startY = -(gridSize - 1) * spacing / 2;
-            const targetX = startX + cell.gridX * spacing;
-            const targetY = startY + cell.gridY * spacing;
-
-            cell.mesh.position.x += (targetX - cell.mesh.position.x) * deltaTime * 2;
-            cell.mesh.position.y += (targetY - cell.mesh.position.y) * deltaTime * 2;
-            cell.border.position.copy(cell.mesh.position);
-        });
+        // Decay gesture force
+        handTrackingState.gestureForce.multiplyScalar(handTrackingState.forceDecay);
     }
-
-    // Decay gesture force
-    handTrackingState.gestureForce.multiplyScalar(handTrackingState.forceDecay);
 
     // Update grid cells
     gridState.cells.forEach(cell => cell.update(deltaTime));
@@ -707,8 +714,23 @@ const handTrackingState = {
     gestureForce: new THREE.Vector3(0, 0, 0),
     forceDecay: 0.92,
     forceSensitivity: 8.0,
-    currentGesture: null
+    currentGesture: null,
+    isFist: false,
+    fistDetected: false
 };
+
+// Vortex animation state
+const vortexState = {
+    active: false,
+    startTime: 0,
+    duration: 3.0, // seconds
+    vortexCenter: new THREE.Vector3(0, 0, 0),
+    rotationSpeed: 5.0,
+    explosionForce: 50.0,
+    meshTargetPositions: []
+};
+
+const flashOverlay = document.getElementById('flash-overlay');
 
 async function startCamera() {
     try {
@@ -847,9 +869,25 @@ function onHandResults(results) {
         handTrackingState.lastHandPosition = handTrackingState.currentHandPosition;
         handTrackingState.currentHandPosition = palmCenter;
 
-        // Calculate movement vector and detect gesture
-        if (handTrackingState.lastHandPosition) {
-            detectGesture();
+        // Detect fist gesture
+        const isFist = detectFist(landmarks);
+        handTrackingState.isFist = isFist;
+
+        if (isFist && !handTrackingState.fistDetected && !vortexState.active) {
+            // Trigger vortex sequence
+            handTrackingState.fistDetected = true;
+            startVortexSequence();
+            gestureIndicator.textContent = 'FIST - VORTEX ACTIVATED!';
+            gestureIndicator.classList.add('active');
+            console.log('Fist detected! Starting vortex sequence...');
+        } else if (!isFist) {
+            handTrackingState.fistDetected = false;
+            if (!vortexState.active) {
+                // Calculate movement vector and detect gesture
+                if (handTrackingState.lastHandPosition) {
+                    detectGesture();
+                }
+            }
         }
 
         handTrackingState.isActive = true;
@@ -862,6 +900,59 @@ function onHandResults(results) {
     }
 
     handCanvasCtx.restore();
+}
+
+// Detect if hand is making a fist
+function detectFist(landmarks) {
+    // Landmark indices for fingertips and palm
+    const thumbTip = landmarks[4];
+    const indexTip = landmarks[8];
+    const middleTip = landmarks[12];
+    const ringTip = landmarks[16];
+    const pinkyTip = landmarks[20];
+    const wrist = landmarks[0];
+    const palmBase = landmarks[9]; // Middle finger base
+
+    // Calculate distances from fingertips to palm
+    const indexDist = Math.sqrt(
+        Math.pow(indexTip.x - palmBase.x, 2) +
+        Math.pow(indexTip.y - palmBase.y, 2) +
+        Math.pow(indexTip.z - palmBase.z, 2)
+    );
+
+    const middleDist = Math.sqrt(
+        Math.pow(middleTip.x - palmBase.x, 2) +
+        Math.pow(middleTip.y - palmBase.y, 2) +
+        Math.pow(middleTip.z - palmBase.z, 2)
+    );
+
+    const ringDist = Math.sqrt(
+        Math.pow(ringTip.x - palmBase.x, 2) +
+        Math.pow(ringTip.y - palmBase.y, 2) +
+        Math.pow(ringTip.z - palmBase.z, 2)
+    );
+
+    const pinkyDist = Math.sqrt(
+        Math.pow(pinkyTip.x - palmBase.x, 2) +
+        Math.pow(pinkyTip.y - palmBase.y, 2) +
+        Math.pow(pinkyTip.z - palmBase.z, 2)
+    );
+
+    // Hand size reference (wrist to middle finger base)
+    const handSize = Math.sqrt(
+        Math.pow(palmBase.x - wrist.x, 2) +
+        Math.pow(palmBase.y - wrist.y, 2) +
+        Math.pow(palmBase.z - wrist.z, 2)
+    );
+
+    // Fist is detected when all fingers are curled (close to palm)
+    // Normalized threshold relative to hand size
+    const threshold = handSize * 0.6;
+
+    return indexDist < threshold &&
+           middleDist < threshold &&
+           ringDist < threshold &&
+           pinkyDist < threshold;
 }
 
 // Detect gesture from hand movement
@@ -910,6 +1001,175 @@ function detectGesture() {
     } else {
         gestureIndicator.classList.remove('active');
     }
+}
+
+// Start vortex sequence
+function startVortexSequence() {
+    vortexState.active = true;
+    vortexState.startTime = performance.now() / 1000; // Convert to seconds
+    vortexState.vortexCenter.set(0, 0, 0);
+
+    console.log('Vortex sequence started at:', vortexState.startTime);
+}
+
+// Update vortex animation
+function updateVortexAnimation(currentTime, deltaTime) {
+    if (!vortexState.active) return;
+
+    const elapsed = currentTime - vortexState.startTime;
+    const progress = elapsed / vortexState.duration;
+
+    if (elapsed < vortexState.duration) {
+        // Phase 1: Vortex (0-3 seconds)
+        applyVortexForce(deltaTime, progress);
+    } else if (elapsed >= vortexState.duration && elapsed < vortexState.duration + 0.01) {
+        // Phase 2: Explosion at exactly 3 seconds
+        triggerExplosion();
+    } else if (elapsed > vortexState.duration + 0.3) {
+        // Phase 3: Reset after flash
+        vortexState.active = false;
+        console.log('Vortex sequence complete');
+    }
+}
+
+// Apply vortex rotational force
+function applyVortexForce(deltaTime, progress) {
+    const center = vortexState.vortexCenter;
+    const rotationSpeed = vortexState.rotationSpeed * (1 + progress * 2); // Accelerate
+
+    particleNets.forEach(net => {
+        const meshPos = net.mesh.position;
+
+        // Vector from center to mesh
+        const offset = new THREE.Vector3().subVectors(meshPos, center);
+        const distance = offset.length();
+
+        if (distance > 0.1) {
+            // Tangential force (perpendicular to radius)
+            const tangent = new THREE.Vector3(-offset.y, offset.x, 0).normalize();
+
+            // Pull toward center while rotating
+            const pullForce = offset.clone().normalize().multiplyScalar(-0.5 * progress);
+            const rotationForce = tangent.multiplyScalar(rotationSpeed);
+
+            // Combine forces
+            const totalForce = pullForce.add(rotationForce);
+
+            // Apply to mesh
+            net.mesh.position.add(totalForce.multiplyScalar(deltaTime));
+
+            // Apply rotation to mesh itself
+            net.mesh.rotation.z += rotationSpeed * deltaTime * 0.5;
+        }
+    });
+
+    // Apply to grid cells
+    gridState.cells.forEach(cell => {
+        const cellPos = cell.mesh.position;
+        const offset = new THREE.Vector3().subVectors(cellPos, center);
+        const distance = offset.length();
+
+        if (distance > 0.1) {
+            const tangent = new THREE.Vector3(-offset.y, offset.x, 0).normalize();
+            const pullForce = offset.clone().normalize().multiplyScalar(-0.3 * progress);
+            const rotationForce = tangent.multiplyScalar(rotationSpeed * 0.5);
+
+            const totalForce = pullForce.add(rotationForce);
+            cell.mesh.position.add(totalForce.multiplyScalar(deltaTime));
+            cell.border.position.copy(cell.mesh.position);
+        }
+    });
+}
+
+// Trigger explosion
+function triggerExplosion() {
+    console.log('EXPLOSION!');
+
+    // Flash effect
+    flashOverlay.classList.add('active');
+    setTimeout(() => {
+        flashOverlay.classList.remove('active');
+    }, 200);
+
+    const center = vortexState.vortexCenter;
+    const explosionForce = vortexState.explosionForce;
+
+    // Apply explosion force to particle networks
+    particleNets.forEach(net => {
+        const offset = new THREE.Vector3().subVectors(net.mesh.position, center);
+        const direction = offset.normalize();
+        const force = direction.multiplyScalar(explosionForce);
+
+        // Apply instant velocity
+        net.mesh.position.add(force.multiplyScalar(0.1));
+
+        // Randomize new target position
+        const newPos = new THREE.Vector3(
+            (Math.random() - 0.5) * 80,
+            (Math.random() - 0.5) * 80,
+            (Math.random() - 0.5) * 60
+        );
+
+        // Smooth transition to new position
+        const startPos = net.mesh.position.clone();
+        const targetPos = newPos;
+
+        // Animate to new position over next 300ms
+        animateMeshToPosition(net.mesh, startPos, targetPos, 0.3);
+
+        // Reset rotation
+        net.mesh.rotation.set(0, 0, 0);
+
+        // Update base position for future idle animation
+        net.basePosition.copy(targetPos);
+    });
+
+    // Apply explosion to grid cells and reset
+    gridState.cells.forEach((cell, index) => {
+        const offset = new THREE.Vector3().subVectors(cell.mesh.position, center);
+        const direction = offset.normalize();
+        const force = direction.multiplyScalar(explosionForce * 0.3);
+
+        cell.mesh.position.add(force.multiplyScalar(0.1));
+
+        // Return to original grid position smoothly
+        const gridSize = 5;
+        const spacing = 10;
+        const startX = -(gridSize - 1) * spacing / 2;
+        const startY = -(gridSize - 1) * spacing / 2;
+        const targetX = startX + cell.gridX * spacing;
+        const targetY = startY + cell.gridY * spacing;
+
+        const startPos = cell.mesh.position.clone();
+        const targetPos = new THREE.Vector3(targetX, targetY, -10);
+
+        animateMeshToPosition(cell.mesh, startPos, targetPos, 0.5, () => {
+            cell.border.position.copy(cell.mesh.position);
+        });
+    });
+}
+
+// Animate mesh to new position smoothly
+function animateMeshToPosition(mesh, startPos, targetPos, duration, onUpdate = null) {
+    const startTime = performance.now() / 1000;
+
+    function animate(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1.0);
+
+        // Ease out cubic
+        const eased = 1 - Math.pow(1 - progress, 3);
+
+        mesh.position.lerpVectors(startPos, targetPos, eased);
+
+        if (onUpdate) onUpdate();
+
+        if (progress < 1.0) {
+            requestAnimationFrame(() => animate(performance.now() / 1000));
+        }
+    }
+
+    requestAnimationFrame(() => animate(performance.now() / 1000));
 }
 
 // Start hand tracking camera

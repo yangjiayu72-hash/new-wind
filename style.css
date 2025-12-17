@@ -40,6 +40,24 @@ canvas {
     margin: 3px 0;
 }
 
+/* White flash overlay */
+#flash-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: white;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 9999;
+    transition: opacity 0.1s ease-out;
+}
+
+#flash-overlay.active {
+    opacity: 1;
+}
+
 /* Camera container */
 #camera-container {
     position: fixed;
