@@ -34,9 +34,8 @@ const audioSystem = {
     backgroundMusic: null,
     isInitialized: false,
     isMusicPlaying: false,
-    clickSoundPool: [],
-    poolSize: 5,
-    poolIndex: 0,
+    lastClickTime: 0,
+    clickCooldown: 0.05, // 50ms minimum between sounds
 
     // Initialize audio context (requires user interaction)
     init() {
@@ -45,7 +44,6 @@ const audioSystem = {
         try {
             this.context = new (window.AudioContext || window.webkitAudioContext)();
             this.createBackgroundMusic();
-            this.createClickSoundPool();
             this.isInitialized = true;
             console.log('Audio system initialized');
         } catch (error) {
@@ -53,67 +51,37 @@ const audioSystem = {
         }
     },
 
-    // Create ambient background music using oscillators
+    // Create simplified ambient background music
     createBackgroundMusic() {
         if (!this.context) return;
 
-        // Create a calming ambient soundscape with multiple layers
+        // Simplified: Only 2 oscillators for better performance
         const gainNode = this.context.createGain();
-        gainNode.gain.value = 0.15; // Subtle volume
+        gainNode.gain.value = 0.08; // Lower volume
         gainNode.connect(this.context.destination);
 
-        // Layer 1: Deep bass drone (60 Hz)
+        // Layer 1: Deep bass (60 Hz)
         const bass = this.context.createOscillator();
         bass.type = 'sine';
         bass.frequency.value = 60;
         const bassGain = this.context.createGain();
-        bassGain.gain.value = 0.3;
+        bassGain.gain.value = 0.4;
         bass.connect(bassGain);
         bassGain.connect(gainNode);
 
-        // Layer 2: Mid atmospheric pad (220 Hz with slight detune)
+        // Layer 2: Mid pad (220 Hz)
         const mid = this.context.createOscillator();
-        mid.type = 'triangle';
+        mid.type = 'sine';
         mid.frequency.value = 220;
-        mid.detune.value = 5; // Slight detune for warmth
         const midGain = this.context.createGain();
-        midGain.gain.value = 0.2;
+        midGain.gain.value = 0.25;
         mid.connect(midGain);
         midGain.connect(gainNode);
 
-        // Layer 3: High shimmer (880 Hz)
-        const high = this.context.createOscillator();
-        high.type = 'sine';
-        high.frequency.value = 880;
-        const highGain = this.context.createGain();
-        highGain.gain.value = 0.1;
-        high.connect(highGain);
-        highGain.connect(gainNode);
-
-        // Add subtle LFO (Low Frequency Oscillator) for modulation
-        const lfo = this.context.createOscillator();
-        lfo.frequency.value = 0.2; // Very slow modulation
-        const lfoGain = this.context.createGain();
-        lfoGain.gain.value = 0.02;
-        lfo.connect(lfoGain);
-        lfoGain.connect(gainNode.gain);
-
         this.backgroundMusic = {
-            oscillators: [bass, mid, high, lfo],
+            oscillators: [bass, mid],
             gainNode: gainNode
         };
-    },
-
-    // Create a pool of click sounds to prevent overlap issues
-    createClickSoundPool() {
-        if (!this.context) return;
-
-        for (let i = 0; i < this.poolSize; i++) {
-            this.clickSoundPool.push({
-                context: this.context,
-                isPlaying: false
-            });
-        }
     },
 
     // Start background music
@@ -121,17 +89,15 @@ const audioSystem = {
         if (!this.isInitialized || this.isMusicPlaying) return;
 
         try {
-            // Resume context if suspended (browser autoplay policy)
             if (this.context.state === 'suspended') {
                 this.context.resume();
             }
 
-            // Start all oscillators
             this.backgroundMusic.oscillators.forEach(osc => {
                 try {
                     osc.start();
                 } catch (e) {
-                    // Oscillator already started, ignore
+                    // Already started
                 }
             });
 
@@ -142,63 +108,62 @@ const audioSystem = {
         }
     },
 
-    // Play click sound effect (soft, futuristic)
+    // Optimized click sound with cooldown
     playClickSound() {
         if (!this.isInitialized) return;
 
+        const now = this.context.currentTime;
+
+        // Throttle: Prevent too many rapid sounds
+        if (now - this.lastClickTime < this.clickCooldown) {
+            return;
+        }
+        this.lastClickTime = now;
+
         try {
-            const now = this.context.currentTime;
-
-            // Use next available sound from pool
-            const soundSlot = this.clickSoundPool[this.poolIndex];
-            this.poolIndex = (this.poolIndex + 1) % this.poolSize;
-
-            // Create oscillator for click sound
+            // Create short-lived oscillator (non-blocking)
             const osc = this.context.createOscillator();
             const gainNode = this.context.createGain();
 
-            // Soft, high-pitched click with quick decay
             osc.type = 'sine';
-            osc.frequency.value = 1200; // Bright but not harsh
+            osc.frequency.value = 1200;
 
-            // Quick envelope: attack 0.005s, decay 0.1s
+            // Quick envelope
             gainNode.gain.setValueAtTime(0, now);
-            gainNode.gain.linearRampToValueAtTime(0.3, now + 0.005); // Fast attack
-            gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.15); // Smooth decay
+            gainNode.gain.linearRampToValueAtTime(0.2, now + 0.003);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
 
             osc.connect(gainNode);
             gainNode.connect(this.context.destination);
 
             osc.start(now);
-            osc.stop(now + 0.2); // Clean up after sound completes
+            osc.stop(now + 0.1); // Shorter duration
 
         } catch (error) {
-            console.warn('Failed to play click sound:', error);
+            // Silently fail to prevent blocking
         }
     },
 
-    // Stop all audio (for cleanup)
+    // Stop all audio
     stop() {
         if (this.backgroundMusic && this.isMusicPlaying) {
             try {
                 this.backgroundMusic.oscillators.forEach(osc => {
                     try {
                         osc.stop();
-                    } catch (e) {
-                        // Already stopped
-                    }
+                    } catch (e) {}
                 });
                 this.isMusicPlaying = false;
-            } catch (error) {
-                console.warn('Error stopping audio:', error);
-            }
+            } catch (error) {}
         }
     }
 };
 
 // Initialize audio on first user interaction
+let audioInitialized = false;
 document.addEventListener('click', () => {
-    if (!audioSystem.isInitialized) {
+    if (!audioInitialized) {
+        audioInitialized = true;
         audioSystem.init();
         audioSystem.startMusic();
     }
