@@ -237,7 +237,10 @@ class ParticleNet {
     }
 
     morphToNewShape(newGeometryType, newColor) {
-        if (this.isMorphing) return; // Already morphing
+        if (this.isMorphing) {
+            console.log(`Mesh ${this.meshId} is already morphing, ignoring click`);
+            return; // Already morphing, prevent concurrent morphs
+        }
 
         // Get currently used geometry types (excluding this mesh)
         const usedTypes = Array.from(geometryTracker.usedGeometries.values())
@@ -249,11 +252,23 @@ class ParticleNet {
         // Get unique geometry type
         const finalGeometryType = newGeometryType || getUniqueGeometryType(usedTypes);
 
+        // Don't morph to the same geometry type
+        if (finalGeometryType === this.currentGeometryType) {
+            console.log(`Mesh ${this.meshId} already has geometry type ${finalGeometryType}, selecting different type`);
+            const otherTypes = geometryTracker.availableTypes.filter(t => t !== this.currentGeometryType);
+            if (otherTypes.length === 0) return; // Only one geometry type exists
+            const randomType = otherTypes[Math.floor(Math.random() * otherTypes.length)];
+            return this.morphToNewShape(randomType, newColor); // Recursive call with different type
+        }
+
         // Start morphing
         this.isMorphing = true;
         this.morphProgress = 0;
         this.sourceColor = new THREE.Color(this.material.color);
         this.targetColor = new THREE.Color(newColor);
+
+        // Store the current geometry type before morphing
+        const previousGeometryType = this.currentGeometryType;
 
         // Generate target geometry
         const targetBaseGeometry = geometryGenerators[finalGeometryType](this.size);
@@ -262,6 +277,13 @@ class ParticleNet {
 
         // Get source positions
         const sourcePositions = this.geometry.attributes.position.array;
+
+        // Safety check for empty geometries
+        if (!sourcePositions || sourcePositions.length === 0 || !targetPositions || targetPositions.length === 0) {
+            console.error(`Mesh ${this.meshId} has empty geometry, aborting morph`);
+            this.isMorphing = false;
+            return;
+        }
 
         // Match vertex counts by interpolating or truncating
         const maxCount = Math.max(sourcePositions.length, targetPositions.length);
@@ -274,8 +296,11 @@ class ParticleNet {
         }
 
         // Fill remaining with last position if source is smaller
-        for (let i = sourcePositions.length; i < maxCount; i++) {
-            this.sourcePositions[i] = sourcePositions[sourcePositions.length - 1];
+        if (sourcePositions.length < maxCount && sourcePositions.length > 0) {
+            const lastValue = sourcePositions[sourcePositions.length - 1];
+            for (let i = sourcePositions.length; i < maxCount; i++) {
+                this.sourcePositions[i] = lastValue;
+            }
         }
 
         // Copy target positions
@@ -284,15 +309,18 @@ class ParticleNet {
         }
 
         // Fill remaining with last position if target is smaller
-        for (let i = targetPositions.length; i < maxCount; i++) {
-            this.targetPositions[i] = targetPositions[targetPositions.length - 1];
+        if (targetPositions.length < maxCount && targetPositions.length > 0) {
+            const lastValue = targetPositions[targetPositions.length - 1];
+            for (let i = targetPositions.length; i < maxCount; i++) {
+                this.targetPositions[i] = lastValue;
+            }
         }
 
         // Update geometry type tracker
         geometryTracker.usedGeometries.set(this.meshId, finalGeometryType);
         this.currentGeometryType = finalGeometryType;
 
-        console.log(`Morphing mesh ${this.meshId} from ${this.currentGeometryType} to ${finalGeometryType}`);
+        console.log(`Morphing mesh ${this.meshId} from ${previousGeometryType} to ${finalGeometryType}`);
     }
 
     updateMorphing(deltaTime) {
@@ -309,8 +337,10 @@ class ParticleNet {
             const finalBaseGeometry = geometryGenerators[this.currentGeometryType](this.size);
             const finalWireframe = new THREE.WireframeGeometry(finalBaseGeometry);
 
-            // Update geometry
+            // Dispose old geometry
             this.geometry.dispose();
+
+            // Update geometry
             this.geometry = finalWireframe;
             this.mesh.geometry = this.geometry;
 
@@ -329,19 +359,25 @@ class ParticleNet {
                 ));
             }
 
+            // Clear morphing data to free memory
+            this.sourcePositions = null;
+            this.targetPositions = null;
+            this.sourceColor = null;
+            this.targetColor = null;
+
             console.log(`Morphing complete for mesh ${this.meshId}`);
         } else {
             // Interpolate positions
             const eased = this.easeInOutCubic(this.morphProgress);
             const positions = this.geometry.attributes.position;
-            const newPositions = new Float32Array(this.sourcePositions.length);
 
+            // CRITICAL FIX: Update array values in place, don't replace the array
             for (let i = 0; i < this.sourcePositions.length; i++) {
-                newPositions[i] = this.sourcePositions[i] + (this.targetPositions[i] - this.sourcePositions[i]) * eased;
+                positions.array[i] = this.sourcePositions[i] +
+                    (this.targetPositions[i] - this.sourcePositions[i]) * eased;
             }
 
-            // Update geometry
-            positions.array = newPositions;
+            // Mark buffer as needing update
             positions.needsUpdate = true;
 
             // Interpolate color
