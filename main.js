@@ -159,7 +159,7 @@ const windState = {
 
 // Particle Network Class
 class ParticleNet {
-    constructor(position, size, density, geometryType, meshId) {
+    constructor(position, size, density, geometryType, meshId, initialColor = 0xffffff) {
         this.basePosition = position.clone();
         this.size = size;
         this.density = density;
@@ -182,7 +182,8 @@ class ParticleNet {
 
         // Geometry and color
         this.currentGeometryType = geometryType;
-        this.currentColor = getRandomColor();
+        this.currentColor = initialColor;
+        this.hasBeenClicked = false; // Track if mesh has been interacted with
 
         // Morphing state
         this.isMorphing = false;
@@ -658,6 +659,10 @@ const numNets = 30;
 // Track which geometry types are used
 const usedGeometryTypes = [];
 
+// Default geometry and color for all meshes before interaction
+const defaultGeometry = 'sphere';
+const defaultColor = 0xffffff; // White
+
 for (let i = 0; i < numNets; i++) {
     const position = new THREE.Vector3(
         (Math.random() - 0.5) * 80,
@@ -668,16 +673,13 @@ for (let i = 0; i < numNets; i++) {
     const size = 2 + Math.random() * 4;
     const density = 0.3 + Math.random() * 0.7;
 
-    // Get unique geometry type
-    const geometryType = getUniqueGeometryType(usedGeometryTypes);
-    usedGeometryTypes.push(geometryType);
-
-    const net = new ParticleNet(position, size, density, geometryType, i);
+    // All meshes start with default geometry and white color
+    const net = new ParticleNet(position, size, density, defaultGeometry, i, defaultColor);
     particleNets.push(net);
     scene.add(net.mesh);
 }
 
-console.log(`Created ${numNets} meshes with unique geometries`);
+console.log(`Created ${numNets} meshes with default white spheres (no color/shape variation)`);
 
 // Create one anomalous mesh with distinct appearance
 const anomalousMeshId = numNets;
@@ -688,12 +690,12 @@ const anomalousPosition = new THREE.Vector3(
 );
 const anomalousSize = 5; // Larger than normal meshes
 const anomalousGeometryType = getUniqueGeometryType(usedGeometryTypes);
-const anomalousNet = new ParticleNet(anomalousPosition, anomalousSize, 0.5, anomalousGeometryType, anomalousMeshId);
+const anomalousColor = 0xffff00; // Bright yellow
+const anomalousNet = new ParticleNet(anomalousPosition, anomalousSize, 0.5, anomalousGeometryType, anomalousMeshId, anomalousColor);
 
-// Make it visually distinct with bright yellow color and higher opacity
-anomalousNet.material.color.setHex(0xffff00); // Bright yellow
-anomalousNet.material.opacity = 1.0; // Full opacity
-anomalousNet.currentColor = 0xffff00;
+// Make it fully opaque to stand out
+anomalousNet.material.opacity = 1.0;
+anomalousNet.hasBeenClicked = true; // Mark as already "interacted" to preserve its state
 
 particleNets.push(anomalousNet);
 scene.add(anomalousNet.mesh);
@@ -731,10 +733,18 @@ document.addEventListener('click', (event) => {
                 anomalousState.vibrationStartTime = performance.now() / 1000;
                 console.log('Anomalous mesh clicked! Starting vibration sequence...');
             } else if (!particleNet.isMorphing && particleNet.meshId !== anomalousState.meshId) {
-                // Normal mesh morphing
-                const newColor = getRandomColor();
-                particleNet.morphToNewShape(null, newColor);
-                console.log(`Clicked mesh ${particleNet.meshId} - morphing to new shape`);
+                // Normal mesh interaction
+                if (!particleNet.hasBeenClicked) {
+                    // First click: Apply both color and geometry change
+                    const newColor = getRandomColor();
+                    particleNet.morphToNewShape(null, newColor);
+                    particleNet.hasBeenClicked = true;
+                    console.log(`Clicked mesh ${particleNet.meshId} for first time - applying color and geometry`);
+                } else {
+                    // Subsequent clicks: Only change geometry, keep current color
+                    particleNet.morphToNewShape(null, particleNet.currentColor);
+                    console.log(`Clicked mesh ${particleNet.meshId} again - morphing to new geometry`);
+                }
             }
         }
     }
