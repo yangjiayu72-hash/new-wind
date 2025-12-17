@@ -589,19 +589,54 @@ function animate() {
     const strengthDelta = windState.targetStrength - windState.strength;
     windState.strength += strengthDelta * deltaTime * 5;
 
+    // Apply hand gesture forces
+    const hasGestureForce = handTrackingState.gestureForce.length() > 0.01;
+
     // Update all particle networks
     particleNets.forEach(net => {
-        if (windState.strength > 0.01) {
+        // Prioritize hand gestures over keyboard wind
+        if (hasGestureForce) {
+            const gestureDirection = handTrackingState.gestureForce.clone().normalize();
+            const gestureStrength = Math.min(handTrackingState.gestureForce.length() * 0.3, 2.0);
+            net.applyWind(gestureDirection, gestureStrength, deltaTime);
+        } else if (windState.strength > 0.01) {
             net.applyWind(windState.direction, windState.strength, deltaTime);
         } else {
             net.recover(deltaTime);
         }
 
-        // Always apply idle animation
-        if (windState.strength < 0.5) {
+        // Always apply idle animation when no strong forces
+        if (windState.strength < 0.5 && !hasGestureForce) {
             net.updateIdle(deltaTime);
         }
     });
+
+    // Apply gesture forces to grid cells
+    if (hasGestureForce) {
+        gridState.cells.forEach(cell => {
+            const force = handTrackingState.gestureForce.clone().multiplyScalar(0.02);
+            cell.mesh.position.x += force.x * deltaTime;
+            cell.mesh.position.y += force.y * deltaTime;
+            cell.border.position.copy(cell.mesh.position);
+        });
+    } else {
+        // Restore grid cells to original positions
+        gridState.cells.forEach(cell => {
+            const gridSize = 5;
+            const spacing = 10;
+            const startX = -(gridSize - 1) * spacing / 2;
+            const startY = -(gridSize - 1) * spacing / 2;
+            const targetX = startX + cell.gridX * spacing;
+            const targetY = startY + cell.gridY * spacing;
+
+            cell.mesh.position.x += (targetX - cell.mesh.position.x) * deltaTime * 2;
+            cell.mesh.position.y += (targetY - cell.mesh.position.y) * deltaTime * 2;
+            cell.border.position.copy(cell.mesh.position);
+        });
+    }
+
+    // Decay gesture force
+    handTrackingState.gestureForce.multiplyScalar(handTrackingState.forceDecay);
 
     // Update grid cells
     gridState.cells.forEach(cell => cell.update(deltaTime));
@@ -658,6 +693,22 @@ const cameraState = {
 const videoElement = document.getElementById('camera-video');
 const toggleButton = document.getElementById('toggle-camera');
 const statusElement = document.getElementById('camera-status');
+const handCanvas = document.getElementById('hand-canvas');
+const handCanvasCtx = handCanvas.getContext('2d');
+const gestureIndicator = document.getElementById('gesture-indicator');
+
+// Hand tracking state
+const handTrackingState = {
+    hands: null,
+    camera: null,
+    isActive: false,
+    lastHandPosition: null,
+    currentHandPosition: null,
+    gestureForce: new THREE.Vector3(0, 0, 0),
+    forceDecay: 0.92,
+    forceSensitivity: 8.0,
+    currentGesture: null
+};
 
 async function startCamera() {
     try {
@@ -679,7 +730,12 @@ async function startCamera() {
         videoElement.classList.add('active');
 
         toggleButton.textContent = '📷 Stop Camera';
-        statusElement.textContent = 'Camera active';
+        statusElement.textContent = 'Camera active - Hand tracking enabled';
+
+        // Start hand tracking after a short delay to ensure video is ready
+        setTimeout(() => {
+            startHandTracking();
+        }, 1000);
 
         console.log('Camera started successfully');
     } catch (error) {
@@ -707,6 +763,9 @@ async function startCamera() {
 
 function stopCamera() {
     if (cameraState.stream) {
+        // Stop hand tracking first
+        stopHandTracking();
+
         const tracks = cameraState.stream.getTracks();
         tracks.forEach(track => track.stop());
 
@@ -731,10 +790,179 @@ toggleButton.addEventListener('click', () => {
     }
 });
 
+// Initialize MediaPipe Hands
+function initializeHandTracking() {
+    if (typeof Hands === 'undefined') {
+        console.warn('MediaPipe Hands not loaded yet');
+        return;
+    }
+
+    handTrackingState.hands = new Hands({
+        locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }
+    });
+
+    handTrackingState.hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+
+    handTrackingState.hands.onResults(onHandResults);
+    console.log('Hand tracking initialized');
+}
+
+// Process hand detection results
+function onHandResults(results) {
+    // Clear canvas
+    handCanvasCtx.save();
+    handCanvasCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+
+        // Draw hand landmarks
+        drawConnectors(handCanvasCtx, landmarks, HAND_CONNECTIONS, {
+            color: '#00FF00',
+            lineWidth: 2
+        });
+        drawLandmarks(handCanvasCtx, landmarks, {
+            color: '#FF0000',
+            lineWidth: 1,
+            radius: 3
+        });
+
+        // Get palm center (using wrist and middle finger base)
+        const wrist = landmarks[0];
+        const middleFingerBase = landmarks[9];
+        const palmCenter = {
+            x: (wrist.x + middleFingerBase.x) / 2,
+            y: (wrist.y + middleFingerBase.y) / 2,
+            z: (wrist.z + middleFingerBase.z) / 2
+        };
+
+        // Update hand position
+        handTrackingState.lastHandPosition = handTrackingState.currentHandPosition;
+        handTrackingState.currentHandPosition = palmCenter;
+
+        // Calculate movement vector and detect gesture
+        if (handTrackingState.lastHandPosition) {
+            detectGesture();
+        }
+
+        handTrackingState.isActive = true;
+    } else {
+        handTrackingState.isActive = false;
+        handTrackingState.lastHandPosition = null;
+        handTrackingState.currentHandPosition = null;
+        handTrackingState.currentGesture = null;
+        gestureIndicator.classList.remove('active');
+    }
+
+    handCanvasCtx.restore();
+}
+
+// Detect gesture from hand movement
+function detectGesture() {
+    if (!handTrackingState.lastHandPosition || !handTrackingState.currentHandPosition) {
+        return;
+    }
+
+    const dx = handTrackingState.currentHandPosition.x - handTrackingState.lastHandPosition.x;
+    const dy = handTrackingState.currentHandPosition.y - handTrackingState.lastHandPosition.y;
+
+    // Threshold for gesture detection
+    const threshold = 0.01;
+
+    let gesture = null;
+    let forceVector = new THREE.Vector3(0, 0, 0);
+
+    if (Math.abs(dx) > threshold || Math.abs(dy) > threshold) {
+        // Determine primary direction
+        if (Math.abs(dx) > Math.abs(dy)) {
+            if (dx > threshold) {
+                gesture = 'RIGHT';
+                forceVector.x = -dx * handTrackingState.forceSensitivity;
+            } else if (dx < -threshold) {
+                gesture = 'LEFT';
+                forceVector.x = -dx * handTrackingState.forceSensitivity;
+            }
+        } else {
+            if (dy > threshold) {
+                gesture = 'DOWN';
+                forceVector.y = dy * handTrackingState.forceSensitivity;
+            } else if (dy < -threshold) {
+                gesture = 'UP';
+                forceVector.y = dy * handTrackingState.forceSensitivity;
+            }
+        }
+
+        if (gesture) {
+            handTrackingState.currentGesture = gesture;
+            handTrackingState.gestureForce.add(forceVector);
+
+            // Update UI
+            gestureIndicator.textContent = `Gesture: ${gesture}`;
+            gestureIndicator.classList.add('active');
+        }
+    } else {
+        gestureIndicator.classList.remove('active');
+    }
+}
+
+// Start hand tracking camera
+async function startHandTracking() {
+    if (!handTrackingState.hands) {
+        initializeHandTracking();
+    }
+
+    if (handTrackingState.hands && videoElement.srcObject) {
+        // Set canvas size to match video
+        handCanvas.width = videoElement.videoWidth || 640;
+        handCanvas.height = videoElement.videoHeight || 480;
+
+        handCanvas.classList.add('active');
+
+        // Create camera for hand tracking
+        if (typeof Camera !== 'undefined') {
+            handTrackingState.camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await handTrackingState.hands.send({ image: videoElement });
+                },
+                width: 640,
+                height: 480
+            });
+
+            handTrackingState.camera.start();
+            console.log('Hand tracking camera started');
+        }
+    }
+}
+
+// Stop hand tracking
+function stopHandTracking() {
+    if (handTrackingState.camera) {
+        handTrackingState.camera.stop();
+        handTrackingState.camera = null;
+    }
+
+    handCanvas.classList.remove('active');
+    gestureIndicator.classList.remove('active');
+    handTrackingState.isActive = false;
+    handTrackingState.lastHandPosition = null;
+    handTrackingState.currentHandPosition = null;
+    handTrackingState.gestureForce.set(0, 0, 0);
+}
+
 // Clean up camera when page is closed
 window.addEventListener('beforeunload', () => {
     if (cameraState.isActive) {
         stopCamera();
+    }
+    if (handTrackingState.isActive) {
+        stopHandTracking();
     }
 });
 
