@@ -727,8 +727,10 @@ document.addEventListener('click', (event) => {
 
         if (particleNet) {
             // Check if anomalous mesh was clicked
-            if (particleNet.meshId === anomalousState.meshId && !anomalousState.isVibrating) {
-                // Start vibration sequence
+            if (particleNet.meshId === anomalousState.meshId &&
+                !anomalousState.isVibrating &&
+                !anomalousState.blackHoleSpawned) {
+                // Start vibration sequence (only once)
                 anomalousState.isVibrating = true;
                 anomalousState.vibrationStartTime = performance.now() / 1000;
                 console.log('Anomalous mesh clicked! Starting vibration sequence...');
@@ -870,20 +872,30 @@ function animate() {
         const elapsed = currentTime - anomalousState.vibrationStartTime;
 
         if (elapsed < anomalousState.delayDuration) {
-            // Apply vibration to all meshes
+            // Apply vibration to all meshes during delay period only
             particleNets.forEach(net => {
                 net.updateVibration(anomalousState.vibrationIntensity);
             });
-
-            console.log(`Vibration active: ${elapsed.toFixed(2)}s / ${anomalousState.delayDuration}s`);
+            // Reduced logging: only log once per second
+            if (Math.floor(elapsed * 2) !== Math.floor((elapsed - deltaTime) * 2)) {
+                console.log(`Vibration: ${elapsed.toFixed(1)}s / ${anomalousState.delayDuration}s`);
+            }
         } else if (!anomalousState.blackHoleSpawned) {
-            // Spawn black hole after 3 seconds
+            // Spawn black hole after 3 seconds and STOP vibration
             const spawnPosition = new THREE.Vector3(0, 0, 10);
             blackHole = new BlackHole(spawnPosition);
             scene.add(blackHole.mesh);
             anomalousState.blackHoleSpawned = true;
+            anomalousState.isVibrating = false; // CRITICAL: Stop vibration to unblock normal physics
             anomalousState.blackHoleSpawnTime = currentTime;
-            console.log('Black hole spawned at center! Drag it to absorb the anomalous mesh.');
+
+            // Reset mesh positions to prevent accumulated displacement issues
+            particleNets.forEach(net => {
+                // Smoothly return meshes to their base positions
+                net.mesh.position.lerp(net.basePosition, 0.5);
+            });
+
+            console.log('Black hole spawned! Vibration stopped. Drag black hole to absorb anomalous mesh.');
         }
     }
 
