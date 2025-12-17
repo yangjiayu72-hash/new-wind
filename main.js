@@ -270,7 +270,7 @@ class ParticleNet {
         // Store the current geometry type before morphing
         const previousGeometryType = this.currentGeometryType;
 
-        // Generate target geometry
+        // PERFORMANCE FIX: Generate target geometry and extract positions, then immediately dispose
         const targetBaseGeometry = geometryGenerators[finalGeometryType](this.size);
         const targetWireframe = new THREE.WireframeGeometry(targetBaseGeometry);
         const targetPositions = targetWireframe.attributes.position.array;
@@ -281,46 +281,62 @@ class ParticleNet {
         // Safety check for empty geometries
         if (!sourcePositions || sourcePositions.length === 0 || !targetPositions || targetPositions.length === 0) {
             console.error(`Mesh ${this.meshId} has empty geometry, aborting morph`);
+            // Clean up temporary geometries
+            targetBaseGeometry.dispose();
+            targetWireframe.dispose();
             this.isMorphing = false;
             return;
         }
 
-        // Match vertex counts by interpolating or truncating
-        const maxCount = Math.max(sourcePositions.length, targetPositions.length);
+        // PERFORMANCE FIX: Use actual vertex count, not padded arrays
+        // This reduces memory usage and update loops
+        const sourceCount = sourcePositions.length;
+        const targetCount = targetPositions.length;
+
+        // Store vertex counts for optimization
+        this.morphSourceCount = sourceCount;
+        this.morphTargetCount = targetCount;
+
+        // Allocate arrays based on actual max count
+        const maxCount = Math.max(sourceCount, targetCount);
         this.sourcePositions = new Float32Array(maxCount);
         this.targetPositions = new Float32Array(maxCount);
 
         // Copy source positions
-        for (let i = 0; i < sourcePositions.length; i++) {
+        for (let i = 0; i < sourceCount; i++) {
             this.sourcePositions[i] = sourcePositions[i];
         }
 
         // Fill remaining with last position if source is smaller
-        if (sourcePositions.length < maxCount && sourcePositions.length > 0) {
-            const lastValue = sourcePositions[sourcePositions.length - 1];
-            for (let i = sourcePositions.length; i < maxCount; i++) {
+        if (sourceCount < maxCount && sourceCount > 0) {
+            const lastValue = sourcePositions[sourceCount - 1];
+            for (let i = sourceCount; i < maxCount; i++) {
                 this.sourcePositions[i] = lastValue;
             }
         }
 
         // Copy target positions
-        for (let i = 0; i < targetPositions.length; i++) {
+        for (let i = 0; i < targetCount; i++) {
             this.targetPositions[i] = targetPositions[i];
         }
 
         // Fill remaining with last position if target is smaller
-        if (targetPositions.length < maxCount && targetPositions.length > 0) {
-            const lastValue = targetPositions[targetPositions.length - 1];
-            for (let i = targetPositions.length; i < maxCount; i++) {
+        if (targetCount < maxCount && targetCount > 0) {
+            const lastValue = targetPositions[targetCount - 1];
+            for (let i = targetCount; i < maxCount; i++) {
                 this.targetPositions[i] = lastValue;
             }
         }
+
+        // CRITICAL: Dispose temporary geometries immediately to prevent memory leak
+        targetBaseGeometry.dispose();
+        targetWireframe.dispose();
 
         // Update geometry type tracker
         geometryTracker.usedGeometries.set(this.meshId, finalGeometryType);
         this.currentGeometryType = finalGeometryType;
 
-        console.log(`Morphing mesh ${this.meshId} from ${previousGeometryType} to ${finalGeometryType}`);
+        console.log(`Morphing mesh ${this.meshId} from ${previousGeometryType} to ${finalGeometryType} (${sourceCount} → ${targetCount} vertices)`);
     }
 
     updateMorphing(deltaTime) {
@@ -333,9 +349,12 @@ class ParticleNet {
             this.morphProgress = 1.0;
             this.isMorphing = false;
 
-            // Create final geometry
+            // PERFORMANCE FIX: Generate final geometry and dispose base geometry
             const finalBaseGeometry = geometryGenerators[this.currentGeometryType](this.size);
             const finalWireframe = new THREE.WireframeGeometry(finalBaseGeometry);
+
+            // CRITICAL: Dispose base geometry immediately after wireframe creation
+            finalBaseGeometry.dispose();
 
             // Dispose old geometry
             this.geometry.dispose();
@@ -364,15 +383,18 @@ class ParticleNet {
             this.targetPositions = null;
             this.sourceColor = null;
             this.targetColor = null;
+            this.morphSourceCount = 0;
+            this.morphTargetCount = 0;
 
             console.log(`Morphing complete for mesh ${this.meshId}`);
         } else {
-            // Interpolate positions
+            // PERFORMANCE OPTIMIZATION: Only update the actual vertex count, not padded values
             const eased = this.easeInOutCubic(this.morphProgress);
             const positions = this.geometry.attributes.position;
+            const arrayLength = this.sourcePositions.length;
 
-            // CRITICAL FIX: Update array values in place, don't replace the array
-            for (let i = 0; i < this.sourcePositions.length; i++) {
+            // Update positions in place
+            for (let i = 0; i < arrayLength; i++) {
                 positions.array[i] = this.sourcePositions[i] +
                     (this.targetPositions[i] - this.sourcePositions[i]) * eased;
             }
