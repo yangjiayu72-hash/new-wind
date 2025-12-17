@@ -620,14 +620,14 @@ class ParticleNet {
             );
 
             const windForce = windDirection.clone()
-                .multiplyScalar(windStrength * 2.0)
+                .multiplyScalar(windStrength * 2.5)
                 .add(turbulence);
 
             // Apply force to velocity
             this.velocities[i].add(windForce.multiplyScalar(deltaTime));
 
-            // Damping
-            this.velocities[i].multiplyScalar(0.95);
+            // Reduced damping for more flowing, drifting motion
+            this.velocities[i].multiplyScalar(0.93);
 
             // Update position
             pos.add(this.velocities[i].clone().multiplyScalar(deltaTime));
@@ -637,8 +637,8 @@ class ParticleNet {
 
         positions.needsUpdate = true;
 
-        // Apply force to mesh position
-        const meshForce = windDirection.clone().multiplyScalar(windStrength * deltaTime * 5);
+        // Enhanced mesh force for more obvious whole-mesh movement
+        const meshForce = windDirection.clone().multiplyScalar(windStrength * deltaTime * 8);
         this.mesh.position.add(meshForce);
     }
 
@@ -1119,8 +1119,8 @@ function animate() {
             // Prioritize hand gestures over keyboard wind
             if (hasGestureForce) {
                 const gestureDirection = handTrackingState.gestureForce.clone().normalize();
-                // Increased gesture strength multiplier for more responsive interaction
-                const gestureStrength = Math.min(handTrackingState.gestureForce.length() * 0.5, 3.0);
+                // Enhanced strength multiplier for faster, more obvious, and more dynamic response
+                const gestureStrength = Math.min(handTrackingState.gestureForce.length() * 1.2, 6.0);
                 net.applyWind(gestureDirection, gestureStrength, deltaTime);
             } else if (windState.strength > 0.01) {
                 net.applyWind(windState.direction, windState.strength, deltaTime);
@@ -1189,8 +1189,8 @@ const handTrackingState = {
     lastHandPosition: null,
     currentHandPosition: null,
     gestureForce: new THREE.Vector3(0, 0, 0),
-    forceDecay: 0.95,  // Slower decay for smoother feel
-    forceSensitivity: 12.0,  // Increased sensitivity for more responsive interaction
+    forceDecay: 0.92,  // Enhanced decay for smooth, flowing motion
+    forceSensitivity: 20.0,  // Significantly increased for more obvious visual response
     currentGesture: null,
     isFist: false,
     fistDetected: false,
@@ -1497,8 +1497,8 @@ function updateGestureForces(currentTime) {
             const easing = 1 - Math.pow(progress, 2); // Ease-out quadratic
 
             // CRITICAL FIX: Set force instead of adding (prevent infinite accumulation)
-            // Add a small sustained force each frame instead of accumulating
-            const sustainedForce = handTrackingState.gestureTargetForce.clone().multiplyScalar(easing * 0.15);
+            // Enhanced sustained force for more continuous, flowing movement
+            const sustainedForce = handTrackingState.gestureTargetForce.clone().multiplyScalar(easing * 0.25);
             handTrackingState.gestureForce.add(sustainedForce);
 
             // Safety check: Limit maximum force magnitude to prevent runaway
