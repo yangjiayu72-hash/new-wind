@@ -363,5 +363,94 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// Camera functionality
+const cameraState = {
+    stream: null,
+    isActive: false
+};
+
+const videoElement = document.getElementById('camera-video');
+const toggleButton = document.getElementById('toggle-camera');
+const statusElement = document.getElementById('camera-status');
+
+async function startCamera() {
+    try {
+        statusElement.textContent = 'Requesting camera access...';
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                facingMode: 'user'
+            },
+            audio: false
+        });
+
+        cameraState.stream = stream;
+        cameraState.isActive = true;
+
+        videoElement.srcObject = stream;
+        videoElement.classList.add('active');
+
+        toggleButton.textContent = '📷 Stop Camera';
+        statusElement.textContent = 'Camera active';
+
+        console.log('Camera started successfully');
+    } catch (error) {
+        console.error('Error accessing camera:', error);
+
+        let errorMessage = 'Failed to access camera';
+
+        if (error.name === 'NotAllowedError') {
+            errorMessage = 'Camera permission denied';
+        } else if (error.name === 'NotFoundError') {
+            errorMessage = 'No camera found';
+        } else if (error.name === 'NotReadableError') {
+            errorMessage = 'Camera is in use';
+        }
+
+        statusElement.textContent = errorMessage;
+        statusElement.style.color = '#ff6b6b';
+
+        setTimeout(() => {
+            statusElement.textContent = '';
+            statusElement.style.color = '';
+        }, 3000);
+    }
+}
+
+function stopCamera() {
+    if (cameraState.stream) {
+        const tracks = cameraState.stream.getTracks();
+        tracks.forEach(track => track.stop());
+
+        videoElement.srcObject = null;
+        videoElement.classList.remove('active');
+
+        cameraState.stream = null;
+        cameraState.isActive = false;
+
+        toggleButton.textContent = '📷 Start Camera';
+        statusElement.textContent = '';
+
+        console.log('Camera stopped');
+    }
+}
+
+toggleButton.addEventListener('click', () => {
+    if (cameraState.isActive) {
+        stopCamera();
+    } else {
+        startCamera();
+    }
+});
+
+// Clean up camera when page is closed
+window.addEventListener('beforeunload', () => {
+    if (cameraState.isActive) {
+        stopCamera();
+    }
+});
+
 // Start animation
 animate();
