@@ -39,6 +39,11 @@ class ParticleNet {
         this.density = density;
         this.time = Math.random() * 1000;
 
+        // Animation state machine
+        this.state = 'idle'; // Possible states: 'idle', 'wind', 'recovering'
+        this.stateTransitionTimer = 0;
+        this.stateTransitionDuration = 0.5; // Time to transition between states
+
         // Idle animation parameters
         this.driftSpeed = new THREE.Vector3(
             (Math.random() - 0.5) * 0.02,
@@ -105,27 +110,78 @@ class ParticleNet {
         }
 
         // Create connections between nearby vertices
+        // OPTIMIZED: Use spatial grid to avoid O(n²) comparisons
         const positions = new Float32Array(vertices);
-        const tempGeometry = new THREE.BufferGeometry();
-        tempGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const numVertices = positions.length / 3;
+        const maxConnectionDist = step * 2.0;
+        const maxConnectionDistSq = maxConnectionDist * maxConnectionDist;
 
-        for (let i = 0; i < positions.length / 3; i++) {
-            const p1 = new THREE.Vector3(
-                positions[i * 3],
-                positions[i * 3 + 1],
-                positions[i * 3 + 2]
-            );
+        // Build spatial hash grid for efficient neighbor finding
+        const cellSize = maxConnectionDist;
+        const spatialGrid = new Map();
 
-            for (let j = i + 1; j < positions.length / 3; j++) {
-                const p2 = new THREE.Vector3(
-                    positions[j * 3],
-                    positions[j * 3 + 1],
-                    positions[j * 3 + 2]
-                );
+        const getCellKey = (x, y, z) => {
+            const cx = Math.floor(x / cellSize);
+            const cy = Math.floor(y / cellSize);
+            const cz = Math.floor(z / cellSize);
+            return `${cx},${cy},${cz}`;
+        };
 
-                const distance = p1.distanceTo(p2);
-                if (distance < step * 2.0) {
-                    indices.push(i, j);
+        // Populate spatial grid
+        for (let i = 0; i < numVertices; i++) {
+            const x = positions[i * 3];
+            const y = positions[i * 3 + 1];
+            const z = positions[i * 3 + 2];
+            const key = getCellKey(x, y, z);
+
+            if (!spatialGrid.has(key)) {
+                spatialGrid.set(key, []);
+            }
+            spatialGrid.get(key).push(i);
+        }
+
+        // Find connections only within nearby cells
+        const checked = new Set();
+        for (let i = 0; i < numVertices; i++) {
+            const x1 = positions[i * 3];
+            const y1 = positions[i * 3 + 1];
+            const z1 = positions[i * 3 + 2];
+
+            const cx = Math.floor(x1 / cellSize);
+            const cy = Math.floor(y1 / cellSize);
+            const cz = Math.floor(z1 / cellSize);
+
+            // Check current cell and adjacent cells (27 cells total)
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dz = -1; dz <= 1; dz++) {
+                        const neighborKey = `${cx + dx},${cy + dy},${cz + dz}`;
+                        const neighbors = spatialGrid.get(neighborKey);
+
+                        if (neighbors) {
+                            for (const j of neighbors) {
+                                if (j <= i) continue; // Skip already checked pairs
+
+                                const pairKey = `${i}-${j}`;
+                                if (checked.has(pairKey)) continue;
+                                checked.add(pairKey);
+
+                                const x2 = positions[j * 3];
+                                const y2 = positions[j * 3 + 1];
+                                const z2 = positions[j * 3 + 2];
+
+                                // Use squared distance to avoid sqrt
+                                const dx = x2 - x1;
+                                const dy = y2 - y1;
+                                const dz = z2 - z1;
+                                const distSq = dx * dx + dy * dy + dz * dz;
+
+                                if (distSq < maxConnectionDistSq) {
+                                    indices.push(i, j);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -149,7 +205,7 @@ class ParticleNet {
     }
 
     updateIdle(deltaTime) {
-        this.time += deltaTime;
+        // Note: this.time is already updated in the main update() method
 
         // Gentle drift
         this.mesh.position.x = this.basePosition.x +
@@ -252,25 +308,101 @@ class ParticleNet {
         // Recover mesh position
         this.mesh.position.lerp(this.basePosition, deltaTime * recoverySpeed);
     }
+
+    // State machine update method
+    update(windDirection, windStrength, deltaTime) {
+        this.time += deltaTime;
+
+        // Determine target state based on wind strength
+        let targetState = 'idle';
+        if (windStrength > 0.1) {
+            targetState = 'wind';
+        } else if (windStrength > 0.01 || this.state === 'wind') {
+            // If there's slight wind or we were in wind state, transition to recovering
+            if (this.state === 'wind') {
+                targetState = 'recovering';
+            }
+        }
+
+        // Handle state transitions
+        if (this.state !== targetState) {
+            this.state = targetState;
+            this.stateTransitionTimer = 0;
+        }
+
+        // Update state transition timer
+        this.stateTransitionTimer = Math.min(
+            this.stateTransitionTimer + deltaTime,
+            this.stateTransitionDuration
+        );
+
+        // Execute state-specific behavior (only ONE per frame)
+        switch (this.state) {
+            case 'idle':
+                this.updateIdle(deltaTime);
+                break;
+
+            case 'wind':
+                this.applyWind(windDirection, windStrength, deltaTime);
+                break;
+
+            case 'recovering':
+                this.recover(deltaTime);
+
+                // Transition to idle when recovered
+                const positions = this.geometry.attributes.position;
+                let maxDistance = 0;
+                for (let i = 0; i < Math.min(positions.count, 10); i++) {
+                    const current = new THREE.Vector3(
+                        positions.getX(i),
+                        positions.getY(i),
+                        positions.getZ(i)
+                    );
+                    const dist = current.distanceTo(this.originalPositions[i]);
+                    maxDistance = Math.max(maxDistance, dist);
+                }
+
+                // If mostly recovered and no wind, transition to idle
+                if (maxDistance < 0.1 && windStrength < 0.01) {
+                    this.state = 'idle';
+                }
+                break;
+        }
+    }
 }
 
-// Create particle networks
+// Create particle networks with error handling
 const particleNets = [];
 const numNets = 30;
 
-for (let i = 0; i < numNets; i++) {
-    const position = new THREE.Vector3(
-        (Math.random() - 0.5) * 80,
-        (Math.random() - 0.5) * 80,
-        (Math.random() - 0.5) * 60
-    );
+try {
+    // Show loading state
+    console.log('Initializing particle networks...');
 
-    const size = 2 + Math.random() * 4;
-    const density = 0.3 + Math.random() * 0.7;
+    for (let i = 0; i < numNets; i++) {
+        const position = new THREE.Vector3(
+            (Math.random() - 0.5) * 80,
+            (Math.random() - 0.5) * 80,
+            (Math.random() - 0.5) * 60
+        );
 
-    const net = new ParticleNet(position, size, density);
-    particleNets.push(net);
-    scene.add(net.mesh);
+        const size = 2 + Math.random() * 4;
+        const density = 0.3 + Math.random() * 0.7;
+
+        const net = new ParticleNet(position, size, density);
+        particleNets.push(net);
+        scene.add(net.mesh);
+    }
+
+    console.log('Particle networks initialized successfully!');
+} catch (error) {
+    console.error('Error initializing particle networks:', error);
+    // Show error to user
+    const instructions = document.getElementById('instructions');
+    if (instructions) {
+        instructions.textContent = 'Error loading scene. Please refresh the page.';
+        instructions.style.color = 'rgba(255, 100, 100, 0.9)';
+    }
 }
 
 // Keyboard controls
@@ -328,32 +460,34 @@ const clock = new THREE.Clock();
 function animate() {
     requestAnimationFrame(animate);
 
-    const deltaTime = clock.getDelta();
+    try {
+        const deltaTime = clock.getDelta();
 
-    // Smooth wind strength transition
-    const strengthDelta = windState.targetStrength - windState.strength;
-    windState.strength += strengthDelta * deltaTime * 5;
+        // Smooth wind strength transition
+        const strengthDelta = windState.targetStrength - windState.strength;
+        windState.strength += strengthDelta * deltaTime * 5;
 
-    // Update all particle networks
-    particleNets.forEach(net => {
-        if (windState.strength > 0.01) {
-            net.applyWind(windState.direction, windState.strength, deltaTime);
-        } else {
-            net.recover(deltaTime);
-        }
+        // Update all particle networks using state machine
+        // This ensures only ONE animation method runs per network per frame
+        particleNets.forEach(net => {
+            try {
+                net.update(windState.direction, windState.strength, deltaTime);
+            } catch (error) {
+                // Log error but continue with other networks
+                console.error('Error updating particle network:', error);
+            }
+        });
 
-        // Always apply idle animation
-        if (windState.strength < 0.5) {
-            net.updateIdle(deltaTime);
-        }
-    });
+        // Gentle camera movement
+        camera.position.x = Math.sin(clock.elapsedTime * 0.1) * 5;
+        camera.position.y = Math.cos(clock.elapsedTime * 0.15) * 3;
+        camera.lookAt(0, 0, 0);
 
-    // Gentle camera movement
-    camera.position.x = Math.sin(clock.elapsedTime * 0.1) * 5;
-    camera.position.y = Math.cos(clock.elapsedTime * 0.15) * 3;
-    camera.lookAt(0, 0, 0);
-
-    renderer.render(scene, camera);
+        renderer.render(scene, camera);
+    } catch (error) {
+        // Log error but keep animation loop running
+        console.error('Error in animation loop:', error);
+    }
 }
 
 // Handle window resize
@@ -363,5 +497,16 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Start animation
-animate();
+// Start animation (always start, even if initialization had errors)
+// This ensures the interface never completely freezes
+try {
+    animate();
+    console.log('Animation loop started');
+} catch (error) {
+    console.error('Error starting animation loop:', error);
+    const instructions = document.getElementById('instructions');
+    if (instructions) {
+        instructions.textContent = 'Critical error. Please refresh the page.';
+        instructions.style.color = 'rgba(255, 50, 50, 1.0)';
+    }
+}
