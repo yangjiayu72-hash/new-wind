@@ -28,6 +28,182 @@ const geometryTracker = {
     availableTypes: []
 };
 
+// Audio system using Web Audio API
+const audioSystem = {
+    context: null,
+    backgroundMusic: null,
+    isInitialized: false,
+    isMusicPlaying: false,
+    clickSoundPool: [],
+    poolSize: 5,
+    poolIndex: 0,
+
+    // Initialize audio context (requires user interaction)
+    init() {
+        if (this.isInitialized) return;
+
+        try {
+            this.context = new (window.AudioContext || window.webkitAudioContext)();
+            this.createBackgroundMusic();
+            this.createClickSoundPool();
+            this.isInitialized = true;
+            console.log('Audio system initialized');
+        } catch (error) {
+            console.warn('Audio initialization failed:', error);
+        }
+    },
+
+    // Create ambient background music using oscillators
+    createBackgroundMusic() {
+        if (!this.context) return;
+
+        // Create a calming ambient soundscape with multiple layers
+        const gainNode = this.context.createGain();
+        gainNode.gain.value = 0.15; // Subtle volume
+        gainNode.connect(this.context.destination);
+
+        // Layer 1: Deep bass drone (60 Hz)
+        const bass = this.context.createOscillator();
+        bass.type = 'sine';
+        bass.frequency.value = 60;
+        const bassGain = this.context.createGain();
+        bassGain.gain.value = 0.3;
+        bass.connect(bassGain);
+        bassGain.connect(gainNode);
+
+        // Layer 2: Mid atmospheric pad (220 Hz with slight detune)
+        const mid = this.context.createOscillator();
+        mid.type = 'triangle';
+        mid.frequency.value = 220;
+        mid.detune.value = 5; // Slight detune for warmth
+        const midGain = this.context.createGain();
+        midGain.gain.value = 0.2;
+        mid.connect(midGain);
+        midGain.connect(gainNode);
+
+        // Layer 3: High shimmer (880 Hz)
+        const high = this.context.createOscillator();
+        high.type = 'sine';
+        high.frequency.value = 880;
+        const highGain = this.context.createGain();
+        highGain.gain.value = 0.1;
+        high.connect(highGain);
+        highGain.connect(gainNode);
+
+        // Add subtle LFO (Low Frequency Oscillator) for modulation
+        const lfo = this.context.createOscillator();
+        lfo.frequency.value = 0.2; // Very slow modulation
+        const lfoGain = this.context.createGain();
+        lfoGain.gain.value = 0.02;
+        lfo.connect(lfoGain);
+        lfoGain.connect(gainNode.gain);
+
+        this.backgroundMusic = {
+            oscillators: [bass, mid, high, lfo],
+            gainNode: gainNode
+        };
+    },
+
+    // Create a pool of click sounds to prevent overlap issues
+    createClickSoundPool() {
+        if (!this.context) return;
+
+        for (let i = 0; i < this.poolSize; i++) {
+            this.clickSoundPool.push({
+                context: this.context,
+                isPlaying: false
+            });
+        }
+    },
+
+    // Start background music
+    startMusic() {
+        if (!this.isInitialized || this.isMusicPlaying) return;
+
+        try {
+            // Resume context if suspended (browser autoplay policy)
+            if (this.context.state === 'suspended') {
+                this.context.resume();
+            }
+
+            // Start all oscillators
+            this.backgroundMusic.oscillators.forEach(osc => {
+                try {
+                    osc.start();
+                } catch (e) {
+                    // Oscillator already started, ignore
+                }
+            });
+
+            this.isMusicPlaying = true;
+            console.log('Background music started');
+        } catch (error) {
+            console.warn('Failed to start music:', error);
+        }
+    },
+
+    // Play click sound effect (soft, futuristic)
+    playClickSound() {
+        if (!this.isInitialized) return;
+
+        try {
+            const now = this.context.currentTime;
+
+            // Use next available sound from pool
+            const soundSlot = this.clickSoundPool[this.poolIndex];
+            this.poolIndex = (this.poolIndex + 1) % this.poolSize;
+
+            // Create oscillator for click sound
+            const osc = this.context.createOscillator();
+            const gainNode = this.context.createGain();
+
+            // Soft, high-pitched click with quick decay
+            osc.type = 'sine';
+            osc.frequency.value = 1200; // Bright but not harsh
+
+            // Quick envelope: attack 0.005s, decay 0.1s
+            gainNode.gain.setValueAtTime(0, now);
+            gainNode.gain.linearRampToValueAtTime(0.3, now + 0.005); // Fast attack
+            gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.15); // Smooth decay
+
+            osc.connect(gainNode);
+            gainNode.connect(this.context.destination);
+
+            osc.start(now);
+            osc.stop(now + 0.2); // Clean up after sound completes
+
+        } catch (error) {
+            console.warn('Failed to play click sound:', error);
+        }
+    },
+
+    // Stop all audio (for cleanup)
+    stop() {
+        if (this.backgroundMusic && this.isMusicPlaying) {
+            try {
+                this.backgroundMusic.oscillators.forEach(osc => {
+                    try {
+                        osc.stop();
+                    } catch (e) {
+                        // Already stopped
+                    }
+                });
+                this.isMusicPlaying = false;
+            } catch (error) {
+                console.warn('Error stopping audio:', error);
+            }
+        }
+    }
+};
+
+// Initialize audio on first user interaction
+document.addEventListener('click', () => {
+    if (!audioSystem.isInitialized) {
+        audioSystem.init();
+        audioSystem.startMusic();
+    }
+}, { once: true });
+
 // Procedural geometry generators
 const geometryGenerators = {
     sphere: (size) => {
@@ -745,6 +921,10 @@ document.addEventListener('click', (event) => {
                 // Start vibration sequence (only once)
                 anomalousState.isVibrating = true;
                 anomalousState.vibrationStartTime = performance.now() / 1000;
+
+                // Play click sound for anomalous mesh
+                audioSystem.playClickSound();
+
                 console.log('Anomalous mesh clicked! Starting vibration sequence...');
             } else if (!particleNet.isMorphing && particleNet.meshId !== anomalousState.meshId) {
                 // Normal mesh interaction
@@ -753,10 +933,18 @@ document.addEventListener('click', (event) => {
                     const newColor = getRandomColor();
                     particleNet.morphToNewShape(null, newColor);
                     particleNet.hasBeenClicked = true;
+
+                    // Play click sound
+                    audioSystem.playClickSound();
+
                     console.log(`Clicked mesh ${particleNet.meshId} for first time - applying color and geometry`);
                 } else {
                     // Subsequent clicks: Only change geometry, keep current color
                     particleNet.morphToNewShape(null, particleNet.currentColor);
+
+                    // Play click sound
+                    audioSystem.playClickSound();
+
                     console.log(`Clicked mesh ${particleNet.meshId} again - morphing to new geometry`);
                 }
             }
