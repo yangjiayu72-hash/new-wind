@@ -936,11 +936,14 @@ function animate() {
 
     // Only apply normal physics if vortex is not active
     if (!vortexState.active && !anomalousState.isVibrating) {
+        // Update gesture persistence system
+        updateGestureForces(currentTime);
+
         // Smooth wind strength transition
         const strengthDelta = windState.targetStrength - windState.strength;
         windState.strength += strengthDelta * deltaTime * 5;
 
-        // Apply hand gesture forces
+        // Apply hand gesture forces with improved responsiveness
         const hasGestureForce = handTrackingState.gestureForce.length() > 0.01;
 
         // Update all particle networks
@@ -951,7 +954,8 @@ function animate() {
             // Prioritize hand gestures over keyboard wind
             if (hasGestureForce) {
                 const gestureDirection = handTrackingState.gestureForce.clone().normalize();
-                const gestureStrength = Math.min(handTrackingState.gestureForce.length() * 0.3, 2.0);
+                // Increased gesture strength multiplier for more responsive interaction
+                const gestureStrength = Math.min(handTrackingState.gestureForce.length() * 0.5, 3.0);
                 net.applyWind(gestureDirection, gestureStrength, deltaTime);
             } else if (windState.strength > 0.01) {
                 net.applyWind(windState.direction, windState.strength, deltaTime);
@@ -1020,11 +1024,17 @@ const handTrackingState = {
     lastHandPosition: null,
     currentHandPosition: null,
     gestureForce: new THREE.Vector3(0, 0, 0),
-    forceDecay: 0.92,
-    forceSensitivity: 8.0,
+    forceDecay: 0.95,  // Slower decay for smoother feel
+    forceSensitivity: 12.0,  // Increased sensitivity for more responsive interaction
     currentGesture: null,
     isFist: false,
-    fistDetected: false
+    fistDetected: false,
+    // Gesture persistence system
+    activeGesture: null,
+    gestureStartTime: 0,
+    gestureDuration: 3.0,  // 3 seconds persistence
+    gestureTargetForce: new THREE.Vector3(0, 0, 0),
+    detectionThreshold: 0.005  // Lower threshold for more sensitive detection
 };
 
 // Vortex animation state
@@ -1269,44 +1279,85 @@ function detectGesture() {
         return;
     }
 
+    const currentTime = performance.now() / 1000;
     const dx = handTrackingState.currentHandPosition.x - handTrackingState.lastHandPosition.x;
     const dy = handTrackingState.currentHandPosition.y - handTrackingState.lastHandPosition.y;
 
-    // Threshold for gesture detection
-    const threshold = 0.01;
+    // More sensitive threshold for responsive detection
+    const threshold = handTrackingState.detectionThreshold;
+    const movement = Math.sqrt(dx * dx + dy * dy);
 
-    let gesture = null;
+    let detectedGesture = null;
     let forceVector = new THREE.Vector3(0, 0, 0);
 
-    if (Math.abs(dx) > threshold || Math.abs(dy) > threshold) {
-        // Determine primary direction
+    // Detect gesture if movement exceeds threshold
+    if (movement > threshold) {
+        // Determine primary direction with improved sensitivity
         if (Math.abs(dx) > Math.abs(dy)) {
+            // Horizontal movement
             if (dx > threshold) {
-                gesture = 'RIGHT';
+                detectedGesture = 'RIGHT';
                 forceVector.x = -dx * handTrackingState.forceSensitivity;
             } else if (dx < -threshold) {
-                gesture = 'LEFT';
+                detectedGesture = 'LEFT';
                 forceVector.x = -dx * handTrackingState.forceSensitivity;
             }
         } else {
+            // Vertical movement
             if (dy > threshold) {
-                gesture = 'DOWN';
+                detectedGesture = 'DOWN';
                 forceVector.y = dy * handTrackingState.forceSensitivity;
             } else if (dy < -threshold) {
-                gesture = 'UP';
+                detectedGesture = 'UP';
                 forceVector.y = dy * handTrackingState.forceSensitivity;
             }
         }
 
-        if (gesture) {
-            handTrackingState.currentGesture = gesture;
-            handTrackingState.gestureForce.add(forceVector);
+        // If a gesture is detected, activate it for 3 seconds
+        if (detectedGesture) {
+            handTrackingState.currentGesture = detectedGesture;
+            handTrackingState.activeGesture = detectedGesture;
+            handTrackingState.gestureStartTime = currentTime;
+            handTrackingState.gestureTargetForce.copy(forceVector);
 
-            // Update UI
-            gestureIndicator.textContent = `Gesture: ${gesture}`;
+            console.log(`Gesture detected: ${detectedGesture} - Active for ${handTrackingState.gestureDuration}s`);
+
+            // Update UI immediately
+            gestureIndicator.textContent = `Gesture: ${detectedGesture}`;
             gestureIndicator.classList.add('active');
         }
+    }
+}
+
+// Update gesture forces with persistence system
+function updateGestureForces(currentTime) {
+    // Check if we have an active gesture
+    if (handTrackingState.activeGesture && handTrackingState.gestureStartTime > 0) {
+        const elapsed = currentTime - handTrackingState.gestureStartTime;
+
+        if (elapsed < handTrackingState.gestureDuration) {
+            // Gesture is still active - maintain force
+            // Use easing for smooth force application
+            const progress = elapsed / handTrackingState.gestureDuration;
+            const easing = 1 - Math.pow(progress, 2); // Ease-out quadratic
+
+            // Apply sustained force based on target
+            const sustainedForce = handTrackingState.gestureTargetForce.clone().multiplyScalar(easing * 0.8);
+            handTrackingState.gestureForce.add(sustainedForce);
+
+            // Keep UI active
+            gestureIndicator.textContent = `Gesture: ${handTrackingState.activeGesture} (${(handTrackingState.gestureDuration - elapsed).toFixed(1)}s)`;
+            gestureIndicator.classList.add('active');
+        } else {
+            // Gesture duration expired - clear active gesture
+            handTrackingState.activeGesture = null;
+            handTrackingState.gestureStartTime = 0;
+            handTrackingState.gestureTargetForce.set(0, 0, 0);
+            gestureIndicator.classList.remove('active');
+            console.log('Gesture persistence ended - returning to default state');
+        }
     } else {
+        // No active gesture - remove UI indicator
         gestureIndicator.classList.remove('active');
     }
 }
