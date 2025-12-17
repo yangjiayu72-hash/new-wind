@@ -39,11 +39,6 @@ class ParticleNet {
         this.density = density;
         this.time = Math.random() * 1000;
 
-        // Animation state machine
-        this.state = 'idle'; // Possible states: 'idle', 'wind', 'recovering'
-        this.stateTransitionTimer = 0;
-        this.stateTransitionDuration = 0.5; // Time to transition between states
-
         // Idle animation parameters
         this.driftSpeed = new THREE.Vector3(
             (Math.random() - 0.5) * 0.02,
@@ -205,7 +200,7 @@ class ParticleNet {
     }
 
     updateIdle(deltaTime) {
-        // Note: this.time is already updated in the main update() method
+        this.time += deltaTime;
 
         // Gentle drift
         this.mesh.position.x = this.basePosition.x +
@@ -308,67 +303,6 @@ class ParticleNet {
         // Recover mesh position
         this.mesh.position.lerp(this.basePosition, deltaTime * recoverySpeed);
     }
-
-    // State machine update method
-    update(windDirection, windStrength, deltaTime) {
-        this.time += deltaTime;
-
-        // Determine target state based on wind strength
-        let targetState = 'idle';
-        if (windStrength > 0.1) {
-            targetState = 'wind';
-        } else if (windStrength > 0.01 || this.state === 'wind') {
-            // If there's slight wind or we were in wind state, transition to recovering
-            if (this.state === 'wind') {
-                targetState = 'recovering';
-            }
-        }
-
-        // Handle state transitions
-        if (this.state !== targetState) {
-            this.state = targetState;
-            this.stateTransitionTimer = 0;
-        }
-
-        // Update state transition timer
-        this.stateTransitionTimer = Math.min(
-            this.stateTransitionTimer + deltaTime,
-            this.stateTransitionDuration
-        );
-
-        // Execute state-specific behavior (only ONE per frame)
-        switch (this.state) {
-            case 'idle':
-                this.updateIdle(deltaTime);
-                break;
-
-            case 'wind':
-                this.applyWind(windDirection, windStrength, deltaTime);
-                break;
-
-            case 'recovering':
-                this.recover(deltaTime);
-
-                // Transition to idle when recovered
-                const positions = this.geometry.attributes.position;
-                let maxDistance = 0;
-                for (let i = 0; i < Math.min(positions.count, 10); i++) {
-                    const current = new THREE.Vector3(
-                        positions.getX(i),
-                        positions.getY(i),
-                        positions.getZ(i)
-                    );
-                    const dist = current.distanceTo(this.originalPositions[i]);
-                    maxDistance = Math.max(maxDistance, dist);
-                }
-
-                // If mostly recovered and no wind, transition to idle
-                if (maxDistance < 0.1 && windStrength < 0.01) {
-                    this.state = 'idle';
-                }
-                break;
-        }
-    }
 }
 
 // Create particle networks with error handling
@@ -467,11 +401,19 @@ function animate() {
         const strengthDelta = windState.targetStrength - windState.strength;
         windState.strength += strengthDelta * deltaTime * 5;
 
-        // Update all particle networks using state machine
-        // This ensures only ONE animation method runs per network per frame
+        // Update all particle networks with blended behaviors
         particleNets.forEach(net => {
             try {
-                net.update(windState.direction, windState.strength, deltaTime);
+                if (windState.strength > 0.01) {
+                    net.applyWind(windState.direction, windState.strength, deltaTime);
+                } else {
+                    net.recover(deltaTime);
+                }
+
+                // Always apply idle animation for smooth blending
+                if (windState.strength < 0.5) {
+                    net.updateIdle(deltaTime);
+                }
             } catch (error) {
                 // Log error but continue with other networks
                 console.error('Error updating particle network:', error);
