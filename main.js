@@ -1218,7 +1218,6 @@ const flashOverlay = document.getElementById('flash-overlay');
 
 async function startCamera() {
     try {
-        statusElement.textContent = 'Requesting camera access...';
 
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
@@ -1236,7 +1235,6 @@ async function startCamera() {
         videoElement.classList.add('active');
 
         toggleButton.textContent = '📷 Stop Camera';
-        statusElement.textContent = 'Camera active - Hand tracking enabled';
 
         // Start hand tracking after a short delay to ensure video is ready
         setTimeout(() => {
@@ -1257,12 +1255,8 @@ async function startCamera() {
             errorMessage = 'Camera is in use';
         }
 
-        statusElement.textContent = errorMessage;
-        statusElement.style.color = '#ff6b6b';
 
         setTimeout(() => {
-            statusElement.textContent = '';
-            statusElement.style.color = '';
         }, 3000);
     }
 }
@@ -1282,7 +1276,6 @@ function stopCamera() {
         cameraState.isActive = false;
 
         toggleButton.textContent = '📷 Start Camera';
-        statusElement.textContent = '';
 
         console.log('Camera stopped');
     }
@@ -1361,8 +1354,6 @@ function onHandResults(results) {
             // Trigger vortex sequence
             handTrackingState.fistDetected = true;
             startVortexSequence();
-            gestureIndicator.textContent = 'FIST - VORTEX ACTIVATED!';
-            gestureIndicator.classList.add('active');
             console.log('Fist detected! Starting vortex sequence...');
         } else if (!isFist) {
             handTrackingState.fistDetected = false;
@@ -1380,7 +1371,6 @@ function onHandResults(results) {
         handTrackingState.lastHandPosition = null;
         handTrackingState.currentHandPosition = null;
         handTrackingState.currentGesture = null;
-        gestureIndicator.classList.remove('active');
     }
 
     handCanvasCtx.restore();
@@ -1490,8 +1480,6 @@ function detectGesture() {
             console.log(`Gesture detected: ${detectedGesture} - Active for ${handTrackingState.gestureDuration}s`);
 
             // Update UI immediately
-            gestureIndicator.textContent = `Gesture: ${detectedGesture}`;
-            gestureIndicator.classList.add('active');
         }
     }
 }
@@ -1522,8 +1510,6 @@ function updateGestureForces(currentTime) {
             // Throttled UI update: only update 10 times per second to prevent DOM thrashing
             const updateInterval = 0.1; // 100ms
             if (!handTrackingState.lastUIUpdate || (currentTime - handTrackingState.lastUIUpdate) >= updateInterval) {
-                gestureIndicator.textContent = `Gesture: ${handTrackingState.activeGesture} (${(handTrackingState.gestureDuration - elapsed).toFixed(1)}s)`;
-                gestureIndicator.classList.add('active');
                 handTrackingState.lastUIUpdate = currentTime;
             }
         } else {
@@ -1531,12 +1517,10 @@ function updateGestureForces(currentTime) {
             handTrackingState.activeGesture = null;
             handTrackingState.gestureStartTime = 0;
             handTrackingState.gestureTargetForce.set(0, 0, 0);
-            gestureIndicator.classList.remove('active');
             console.log('Gesture persistence ended - returning to default state');
         }
     } else {
         // No active gesture - remove UI indicator
-        gestureIndicator.classList.remove('active');
     }
 }
 
@@ -1705,7 +1689,6 @@ function stopHandTracking() {
     }
 
     handCanvas.classList.remove('active');
-    gestureIndicator.classList.remove('active');
     handTrackingState.isActive = false;
     handTrackingState.lastHandPosition = null;
     handTrackingState.currentHandPosition = null;

@@ -7,13 +7,6 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="instructions">
-        <div>Arrow Keys: Control wind direction</div>
-        <div>Hand Gestures: Move hand to control all meshes (camera required)</div>
-        <div>Fist Gesture: Trigger vortex → explosion sequence</div>
-        <div>Click mesh: Morph to new shape & color</div>
-    </div>
-
     <!-- White flash overlay -->
     <div id="flash-overlay"></div>
 
@@ -37,10 +30,8 @@
         <video id="camera-video" autoplay playsinline></video>
         <canvas id="hand-canvas"></canvas>
         <div id="camera-controls">
-            <button id="toggle-camera">📷 Start Camera</button>
+            <button id="toggle-camera">📷</button>
         </div>
-        <div id="camera-status"></div>
-        <div id="gesture-indicator"></div>
     </div>
 
     <script type="importmap">
