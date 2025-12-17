@@ -1493,6 +1493,8 @@ function updateGlobalEventState(deltaTime, currentTime) {
             particleNets.forEach(net => {
                 net.mesh.position.lerp(net.basePosition, 0.5);
             });
+
+            console.log('Black hole spawned! Drag it to absorb the anomalous mesh.');
         }
         return;
     }
@@ -1507,6 +1509,8 @@ function updateGlobalEventState(deltaTime, currentTime) {
 
         // Check collision with anomalous mesh
         if (anomalousState.mesh && blackHole.checkCollision(anomalousState.mesh)) {
+            console.log('Anomalous mesh absorbed by black hole! Restoring scene...');
+
             // Remove anomalous mesh
             scene.remove(anomalousState.mesh.mesh);
             anomalousState.mesh.geometry.dispose();
@@ -1530,6 +1534,8 @@ function updateGlobalEventState(deltaTime, currentTime) {
 
             // Return to IDLE
             stateMachine.setState(InteractionState.IDLE, currentTime);
+
+            console.log('Scene restored to normal.');
         }
         return;
     }
@@ -1587,117 +1593,7 @@ function animate() {
                 break;
         }
 
-        // LEGACY: Keep old system for backwards compatibility during transition
-        // Update vortex animation (overrides other forces)
-        updateVortexAnimation(currentTime, deltaTime);
-
-        // Update anomalous mesh vibration sequence
-        if (anomalousState.isVibrating) {
-        const elapsed = currentTime - anomalousState.vibrationStartTime;
-
-        if (elapsed < anomalousState.delayDuration) {
-            // Apply vibration to all meshes during delay period only
-            particleNets.forEach(net => {
-                net.updateVibration(anomalousState.vibrationIntensity);
-            });
-            // Reduced logging: only log once per second
-            if (Math.floor(elapsed * 2) !== Math.floor((elapsed - deltaTime) * 2)) {
-                console.log(`Vibration: ${elapsed.toFixed(1)}s / ${anomalousState.delayDuration}s`);
-            }
-        } else if (!anomalousState.blackHoleSpawned) {
-            // Spawn black hole after 3 seconds and STOP vibration
-            const spawnPosition = new THREE.Vector3(0, 0, 10);
-            blackHole = new BlackHole(spawnPosition);
-            scene.add(blackHole.mesh);
-            anomalousState.blackHoleSpawned = true;
-            anomalousState.isVibrating = false; // CRITICAL: Stop vibration to unblock normal physics
-            anomalousState.blackHoleSpawnTime = currentTime;
-
-            // Reset mesh positions to prevent accumulated displacement issues
-            particleNets.forEach(net => {
-                // Smoothly return meshes to their base positions
-                net.mesh.position.lerp(net.basePosition, 0.5);
-            });
-
-            console.log('Black hole spawned! Vibration stopped. Drag black hole to absorb anomalous mesh.');
-        }
-    }
-
-    // Update black hole if it exists
-    if (blackHole) {
-        blackHole.update(deltaTime);
-
-        // Apply attraction force to all meshes
-        particleNets.forEach(net => {
-            blackHole.applyAttractionToMesh(net, deltaTime);
-        });
-
-        // Check collision with anomalous mesh
-        if (anomalousState.mesh && blackHole.checkCollision(anomalousState.mesh)) {
-            console.log('Anomalous mesh absorbed by black hole! Restoring normal state...');
-
-            // Remove anomalous mesh
-            scene.remove(anomalousState.mesh.mesh);
-            anomalousState.mesh.geometry.dispose();
-            anomalousState.mesh.material.dispose();
-            const index = particleNets.indexOf(anomalousState.mesh);
-            if (index > -1) {
-                particleNets.splice(index, 1);
-            }
-
-            // Remove black hole
-            blackHole.remove();
-            blackHole = null;
-
-            // Reset anomalous state
-            anomalousState.isVibrating = false;
-            anomalousState.blackHoleSpawned = false;
-            anomalousState.mesh = null;
-
-            console.log('Scene restored to normal. Anomalous mesh removed.');
-        }
-    }
-
-    // Only apply normal physics if vortex is not active
-    if (!vortexState.active && !anomalousState.isVibrating) {
-        // Update gesture persistence system
-        updateGestureForces(currentTime);
-
-        // Smooth wind strength transition
-        const strengthDelta = windState.targetStrength - windState.strength;
-        windState.strength += strengthDelta * deltaTime * 5;
-
-        // Apply hand gesture forces with improved responsiveness
-        const hasGestureForce = handTrackingState.gestureForce.length() > 0.01;
-
-        // Update all particle networks
-        particleNets.forEach(net => {
-            // Update morphing animation
-            net.updateMorphing(deltaTime);
-
-            // STABILITY: Prioritize hand gestures over keyboard wind with reduced multipliers
-            if (hasGestureForce) {
-                const gestureDirection = handTrackingState.gestureForce.clone().normalize();
-                // Reduced multipliers for stability while maintaining responsiveness
-                const gestureStrength = Math.min(handTrackingState.gestureForce.length() * 0.9, 4.5);
-                net.applyWind(gestureDirection, gestureStrength, deltaTime);
-            } else if (windState.strength > 0.01) {
-                net.applyWind(windState.direction, windState.strength, deltaTime);
-            } else {
-                net.recover(deltaTime);
-            }
-
-            // Always apply idle animation when no strong forces
-            if (windState.strength < 0.5 && !hasGestureForce) {
-                net.updateIdle(deltaTime);
-            }
-        });
-
-        // Decay gesture force
-        handTrackingState.gestureForce.multiplyScalar(handTrackingState.forceDecay);
-    }
-
-    // Screen shake effect
+        // Screen shake effect
     let cameraOffsetX = 0;
     let cameraOffsetY = 0;
 
