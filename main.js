@@ -276,22 +276,22 @@ class ParticleNet {
         const targetWireframe = new THREE.WireframeGeometry(targetBaseGeometry);
         const targetPositions = targetWireframe.attributes.position.array;
 
-        // Get source positions
-        const sourcePositions = this.geometry.attributes.position.array;
-
-        // Enhanced safety checks for geometry validation
-        if (!sourcePositions || sourcePositions.length === 0 || !targetPositions || targetPositions.length === 0) {
-            console.error(`Mesh ${this.meshId} has empty geometry, aborting morph`);
-            // Clean up temporary geometries
+        // CRITICAL: Validate geometry structure BEFORE accessing attributes
+        if (!this.geometry || !this.geometry.attributes || !this.geometry.attributes.position) {
+            console.error(`Mesh ${this.meshId} has invalid geometry structure, aborting morph`);
             targetBaseGeometry.dispose();
             targetWireframe.dispose();
             this.isMorphing = false;
             return;
         }
 
-        // Additional validation: Ensure geometry has proper attributes
-        if (!this.geometry || !this.geometry.attributes || !this.geometry.attributes.position) {
-            console.error(`Mesh ${this.meshId} has invalid geometry structure, aborting morph`);
+        // Get source positions (safe after validation)
+        const sourcePositions = this.geometry.attributes.position.array;
+
+        // Enhanced safety checks for geometry validation
+        if (!sourcePositions || sourcePositions.length === 0 || !targetPositions || targetPositions.length === 0) {
+            console.error(`Mesh ${this.meshId} has empty geometry, aborting morph`);
+            // Clean up temporary geometries
             targetBaseGeometry.dispose();
             targetWireframe.dispose();
             this.isMorphing = false;
