@@ -37,6 +37,105 @@ const InteractionState = {
     RESET: 'reset'
 };
 
+// COOLDOWN SYSTEM: Prevent interaction overload with debouncing
+const cooldownSystem = {
+    // Click cooldowns (per-mesh tracking)
+    lastClickTime: 0,
+    clickCooldown: 0.8, // 800ms global cooldown
+    meshCooldowns: new Map(), // meshId -> lastClickTime
+    meshClickCooldown: 0.5, // 500ms per-mesh cooldown
+
+    // Gesture cooldowns
+    lastGestureTime: 0,
+    gestureCooldown: 3.0, // 3 seconds lock after activation
+    isGestureLocked: false,
+
+    // Global event cooldowns
+    lastGlobalEventTime: 0,
+    globalEventCooldown: 1.0, // 1 second between global events
+    isGlobalEventActive: false,
+
+    // Check if click is allowed
+    canClick(currentTime, meshId = null) {
+        // Check global cooldown
+        if (currentTime - this.lastClickTime < this.clickCooldown) {
+            return false;
+        }
+
+        // Check per-mesh cooldown if meshId provided
+        if (meshId !== null) {
+            const lastMeshClick = this.meshCooldowns.get(meshId) || 0;
+            if (currentTime - lastMeshClick < this.meshClickCooldown) {
+                return false;
+            }
+        }
+
+        return true;
+    },
+
+    // Register click
+    registerClick(currentTime, meshId = null) {
+        this.lastClickTime = currentTime;
+        if (meshId !== null) {
+            this.meshCooldowns.set(meshId, currentTime);
+        }
+    },
+
+    // Check if gesture is allowed
+    canActivateGesture(currentTime) {
+        if (this.isGestureLocked) {
+            return false;
+        }
+        if (currentTime - this.lastGestureTime < this.gestureCooldown) {
+            return false;
+        }
+        return true;
+    },
+
+    // Register gesture activation
+    registerGesture(currentTime) {
+        this.lastGestureTime = currentTime;
+        this.isGestureLocked = true;
+
+        // Unlock after gesture duration
+        setTimeout(() => {
+            this.isGestureLocked = false;
+        }, this.gestureCooldown * 1000);
+    },
+
+    // Check if global event is allowed
+    canTriggerGlobalEvent(currentTime) {
+        if (this.isGlobalEventActive) {
+            return false;
+        }
+        if (currentTime - this.lastGlobalEventTime < this.globalEventCooldown) {
+            return false;
+        }
+        return true;
+    },
+
+    // Register global event start
+    registerGlobalEventStart(currentTime) {
+        this.lastGlobalEventTime = currentTime;
+        this.isGlobalEventActive = true;
+    },
+
+    // Register global event end
+    registerGlobalEventEnd() {
+        this.isGlobalEventActive = false;
+    },
+
+    // Reset all cooldowns (for RESET state)
+    reset() {
+        this.lastClickTime = 0;
+        this.meshCooldowns.clear();
+        this.lastGestureTime = 0;
+        this.isGestureLocked = false;
+        this.lastGlobalEventTime = 0;
+        this.isGlobalEventActive = false;
+    }
+};
+
 const stateMachine = {
     currentState: InteractionState.IDLE,
     stateStartTime: 0,
@@ -140,6 +239,9 @@ const stateMachine = {
         handTrackingState.activeGesture = null;
         windState.active = false;
         windState.strength = 0;
+
+        // Reset all cooldowns
+        cooldownSystem.reset();
 
         // Transition back to idle
         setTimeout(() => {
@@ -1013,7 +1115,7 @@ console.log(`Created anomalous mesh at ID ${anomalousMeshId} (yellow, larger siz
 
 // Grid and black hole removed - only 3D particle meshes remain
 
-// STATE MACHINE: Click detection with state transitions
+// COOLDOWN: Click detection with cooldown and state transitions
 document.addEventListener('click', (event) => {
     try {
         const currentTime = performance.now() / 1000;
@@ -1037,6 +1139,16 @@ document.addEventListener('click', (event) => {
                 if (particleNet.meshId === anomalousState.meshId &&
                     !anomalousState.isVibrating &&
                     !anomalousState.blackHoleSpawned) {
+
+                    // COOLDOWN: Check if global event can be triggered
+                    if (!cooldownSystem.canTriggerGlobalEvent(currentTime)) {
+                        console.log('Global event on cooldown');
+                        return;
+                    }
+
+                    // Register global event start
+                    cooldownSystem.registerGlobalEventStart(currentTime);
+
                     // Transition to GLOBAL_EVENT state
                     stateMachine.setState(InteractionState.GLOBAL_EVENT, currentTime, {
                         eventType: 'anomaly'
@@ -1053,7 +1165,14 @@ document.addEventListener('click', (event) => {
                            particleNet.meshId !== anomalousState.meshId &&
                            (stateMachine.isState(InteractionState.IDLE) ||
                             stateMachine.isState(InteractionState.CLICK_INTERACTION))) {
-                    // Only allow clicks in IDLE or CLICK_INTERACTION states
+
+                    // COOLDOWN: Check if click is allowed (global + per-mesh)
+                    if (!cooldownSystem.canClick(currentTime, particleNet.meshId)) {
+                        return; // Silently ignore click on cooldown
+                    }
+
+                    // Register click
+                    cooldownSystem.registerClick(currentTime, particleNet.meshId);
 
                     // Transition to CLICK_INTERACTION state
                     stateMachine.setState(InteractionState.CLICK_INTERACTION, currentTime, {
@@ -1325,6 +1444,9 @@ function updateGlobalEventState(deltaTime, currentTime) {
             anomalousState.blackHoleSpawned = false;
             anomalousState.mesh = null;
 
+            // COOLDOWN: Register global event end
+            cooldownSystem.registerGlobalEventEnd();
+
             // Return to IDLE
             stateMachine.setState(InteractionState.IDLE, currentTime);
         }
@@ -1332,6 +1454,9 @@ function updateGlobalEventState(deltaTime, currentTime) {
     }
 
     // No active global events, return to IDLE
+    // COOLDOWN: Register global event end
+    cooldownSystem.registerGlobalEventEnd();
+
     stateMachine.setState(InteractionState.IDLE, currentTime);
 }
 
@@ -1826,11 +1951,19 @@ function detectGesture() {
             }
         }
 
-        // STATE MACHINE: If gesture detected, activate and transition state
+        // COOLDOWN: If gesture detected, check cooldown and activate
         if (detectedGesture && !handTrackingState.activeGesture) {
+            // Check cooldown first
+            if (!cooldownSystem.canActivateGesture(currentTime)) {
+                return; // Gesture still locked
+            }
+
             // Only activate gesture in IDLE or GESTURE_INTERACTION states
             if (stateMachine.isState(InteractionState.IDLE) ||
                 stateMachine.isState(InteractionState.GESTURE_INTERACTION)) {
+
+                // Register gesture activation (locks for 3 seconds)
+                cooldownSystem.registerGesture(currentTime);
 
                 handTrackingState.currentGesture = detectedGesture;
                 handTrackingState.activeGesture = detectedGesture;
@@ -1842,7 +1975,7 @@ function detectGesture() {
                     gesture: detectedGesture
                 });
 
-                console.log(`Gesture: ${detectedGesture} (${handTrackingState.gestureDuration}s)`);
+                console.log(`Gesture: ${detectedGesture} (locked for ${cooldownSystem.gestureCooldown}s)`);
             }
         }
     }
@@ -1884,9 +2017,18 @@ function updateGestureForces(currentTime) {
     }
 }
 
-// STATE MACHINE: Start vortex sequence with state transition
+// COOLDOWN: Start vortex sequence with cooldown and state transition
 function startVortexSequence() {
     const currentTime = performance.now() / 1000;
+
+    // COOLDOWN: Check if global event can be triggered
+    if (!cooldownSystem.canTriggerGlobalEvent(currentTime)) {
+        console.log('Vortex on cooldown, cannot trigger');
+        return;
+    }
+
+    // Register global event start
+    cooldownSystem.registerGlobalEventStart(currentTime);
 
     // Transition to GLOBAL_EVENT state
     stateMachine.setState(InteractionState.GLOBAL_EVENT, currentTime, {
@@ -1916,6 +2058,9 @@ function updateVortexAnimation(currentTime, deltaTime) {
     } else if (elapsed > vortexState.duration + 0.3) {
         // Phase 3: Reset after flash and return to IDLE
         vortexState.active = false;
+
+        // COOLDOWN: Register global event end
+        cooldownSystem.registerGlobalEventEnd();
 
         // STATE MACHINE: Transition back to IDLE
         stateMachine.setState(InteractionState.IDLE, currentTime);
