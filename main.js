@@ -28,6 +28,136 @@ const geometryTracker = {
     availableTypes: []
 };
 
+// STATE MACHINE: Interaction state management for clean, non-overlapping states
+const InteractionState = {
+    IDLE: 'idle',
+    CLICK_INTERACTION: 'click_interaction',
+    GESTURE_INTERACTION: 'gesture_interaction',
+    GLOBAL_EVENT: 'global_event',
+    RESET: 'reset'
+};
+
+const stateMachine = {
+    currentState: InteractionState.IDLE,
+    stateStartTime: 0,
+    stateData: {}, // Store state-specific data
+
+    // Transition to new state with validation
+    setState(newState, currentTime, data = {}) {
+        // Validate state transition
+        if (!this.canTransitionTo(newState)) {
+            console.warn(`Invalid state transition: ${this.currentState} -> ${newState}`);
+            return false;
+        }
+
+        // Exit current state
+        this.exitState(this.currentState, currentTime);
+
+        // Transition to new state
+        const previousState = this.currentState;
+        this.currentState = newState;
+        this.stateStartTime = currentTime;
+        this.stateData = data;
+
+        // Enter new state
+        this.enterState(newState, currentTime);
+
+        console.log(`State: ${previousState} -> ${newState}`);
+        return true;
+    },
+
+    // Check if transition is allowed
+    canTransitionTo(newState) {
+        const current = this.currentState;
+
+        // IDLE can transition to any state
+        if (current === InteractionState.IDLE) return true;
+
+        // GLOBAL_EVENT has highest priority, can override anything
+        if (newState === InteractionState.GLOBAL_EVENT) return true;
+
+        // RESET can be called from any state
+        if (newState === InteractionState.RESET) return true;
+
+        // Other states can only transition to IDLE or RESET
+        if (newState === InteractionState.IDLE) return true;
+
+        // Prevent other transitions (e.g., CLICK -> GESTURE directly)
+        return false;
+    },
+
+    // Enter state handler
+    enterState(state, currentTime) {
+        switch (state) {
+            case InteractionState.IDLE:
+                // Clear all active forces and animations
+                handTrackingState.gestureForce.set(0, 0, 0);
+                handTrackingState.activeGesture = null;
+                windState.active = false;
+                break;
+
+            case InteractionState.CLICK_INTERACTION:
+                // Click interaction starts morphing
+                break;
+
+            case InteractionState.GESTURE_INTERACTION:
+                // Gesture interaction active
+                break;
+
+            case InteractionState.GLOBAL_EVENT:
+                // Global events like anomaly, vortex, black hole
+                break;
+
+            case InteractionState.RESET:
+                // Full system reset
+                this.resetSystem(currentTime);
+                break;
+        }
+    },
+
+    // Exit state handler
+    exitState(state, currentTime) {
+        switch (state) {
+            case InteractionState.CLICK_INTERACTION:
+                // Ensure morphing cleanup if needed
+                break;
+
+            case InteractionState.GESTURE_INTERACTION:
+                // Clean up gesture forces
+                handTrackingState.gestureForce.set(0, 0, 0);
+                break;
+
+            case InteractionState.GLOBAL_EVENT:
+                // Clean up global event data
+                break;
+        }
+    },
+
+    // Reset system to clean state
+    resetSystem(currentTime) {
+        // Clear all forces
+        handTrackingState.gestureForce.set(0, 0, 0);
+        handTrackingState.activeGesture = null;
+        windState.active = false;
+        windState.strength = 0;
+
+        // Transition back to idle
+        setTimeout(() => {
+            this.setState(InteractionState.IDLE, currentTime);
+        }, 100);
+    },
+
+    // Check if currently in a specific state
+    isState(state) {
+        return this.currentState === state;
+    },
+
+    // Get time elapsed in current state
+    getStateElapsed(currentTime) {
+        return currentTime - this.stateStartTime;
+    }
+};
+
 // Audio system using Web Audio API
 const audioSystem = {
     context: null,
@@ -883,9 +1013,11 @@ console.log(`Created anomalous mesh at ID ${anomalousMeshId} (yellow, larger siz
 
 // Grid and black hole removed - only 3D particle meshes remain
 
-// STABILITY: Click detection with error handling
+// STATE MACHINE: Click detection with state transitions
 document.addEventListener('click', (event) => {
     try {
+        const currentTime = performance.now() / 1000;
+
         // Update mouse position
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -893,7 +1025,7 @@ document.addEventListener('click', (event) => {
 
         // Raycast to detect clicked mesh
         raycaster.setFromCamera(mouse, camera);
-        const meshes = particleNets.map(net => net.mesh).filter(m => m); // Filter out null meshes
+        const meshes = particleNets.map(net => net.mesh).filter(m => m);
         const intersects = raycaster.intersectObjects(meshes);
 
         if (intersects.length > 0) {
@@ -905,13 +1037,29 @@ document.addEventListener('click', (event) => {
                 if (particleNet.meshId === anomalousState.meshId &&
                     !anomalousState.isVibrating &&
                     !anomalousState.blackHoleSpawned) {
-                    // Start vibration sequence (only once)
-                    anomalousState.isVibrating = true;
-                    anomalousState.vibrationStartTime = performance.now() / 1000;
+                    // Transition to GLOBAL_EVENT state
+                    stateMachine.setState(InteractionState.GLOBAL_EVENT, currentTime, {
+                        eventType: 'anomaly'
+                    });
 
-                    // Play click sound for anomalous mesh
+                    // Start vibration sequence
+                    anomalousState.isVibrating = true;
+                    anomalousState.vibrationStartTime = currentTime;
+
+                    // Play click sound
                     audioSystem.playClickSound();
-                } else if (!particleNet.isMorphing && particleNet.meshId !== anomalousState.meshId) {
+
+                } else if (!particleNet.isMorphing &&
+                           particleNet.meshId !== anomalousState.meshId &&
+                           (stateMachine.isState(InteractionState.IDLE) ||
+                            stateMachine.isState(InteractionState.CLICK_INTERACTION))) {
+                    // Only allow clicks in IDLE or CLICK_INTERACTION states
+
+                    // Transition to CLICK_INTERACTION state
+                    stateMachine.setState(InteractionState.CLICK_INTERACTION, currentTime, {
+                        meshId: particleNet.meshId
+                    });
+
                     // Normal mesh interaction
                     if (!particleNet.hasBeenClicked) {
                         // First click: Apply both color and geometry change
@@ -1040,6 +1188,153 @@ function updateWindDirection() {
 
 // Mouse/Touch event handlers removed - grid interaction removed
 
+// STATE MACHINE: State update functions
+function updateIdleState(deltaTime, currentTime) {
+    // IDLE state: Only passive floating animations, no forces
+    particleNets.forEach(net => {
+        // Update morphing if any mesh is still morphing
+        net.updateMorphing(deltaTime);
+
+        // Recover to original position
+        net.recover(deltaTime);
+
+        // Apply gentle idle animation
+        net.updateIdle(deltaTime);
+    });
+
+    // Check if gesture becomes active
+    const hasGestureForce = handTrackingState.gestureForce.length() > 0.01;
+    if (hasGestureForce && handTrackingState.activeGesture) {
+        stateMachine.setState(InteractionState.GESTURE_INTERACTION, currentTime);
+    }
+}
+
+function updateClickInteractionState(deltaTime, currentTime) {
+    // CLICK state: Morphing animation active
+    let anyMorphing = false;
+
+    particleNets.forEach(net => {
+        // Update morphing animation
+        net.updateMorphing(deltaTime);
+        if (net.isMorphing) anyMorphing = true;
+
+        // Recover to original position
+        net.recover(deltaTime);
+
+        // Apply gentle idle animation
+        net.updateIdle(deltaTime);
+    });
+
+    // Return to IDLE when all morphing complete
+    if (!anyMorphing) {
+        stateMachine.setState(InteractionState.IDLE, currentTime);
+    }
+}
+
+function updateGestureInteractionState(deltaTime, currentTime) {
+    // GESTURE state: Hand gesture forces active
+    updateGestureForces(currentTime);
+
+    const hasGestureForce = handTrackingState.gestureForce.length() > 0.01;
+
+    particleNets.forEach(net => {
+        // Update morphing if needed
+        net.updateMorphing(deltaTime);
+
+        if (hasGestureForce) {
+            const gestureDirection = handTrackingState.gestureForce.clone().normalize();
+            const gestureStrength = Math.min(handTrackingState.gestureForce.length() * 0.9, 4.5);
+            net.applyWind(gestureDirection, gestureStrength, deltaTime);
+        } else {
+            net.recover(deltaTime);
+        }
+
+        // Light idle animation
+        if (!hasGestureForce) {
+            net.updateIdle(deltaTime);
+        }
+    });
+
+    // Decay gesture force
+    handTrackingState.gestureForce.multiplyScalar(handTrackingState.forceDecay);
+
+    // Return to IDLE when gesture force dissipates
+    if (!hasGestureForce && !handTrackingState.activeGesture) {
+        stateMachine.setState(InteractionState.IDLE, currentTime);
+    }
+}
+
+function updateGlobalEventState(deltaTime, currentTime) {
+    // GLOBAL_EVENT state: Vortex, anomaly vibration, black hole
+
+    // Check if vortex is active
+    if (vortexState.active) {
+        updateVortexAnimation(currentTime, deltaTime);
+        return; // Vortex overrides everything
+    }
+
+    // Check if anomaly vibration is active
+    if (anomalousState.isVibrating) {
+        const elapsed = currentTime - anomalousState.vibrationStartTime;
+
+        if (elapsed < anomalousState.delayDuration) {
+            particleNets.forEach(net => {
+                net.updateVibration(anomalousState.vibrationIntensity);
+            });
+        } else if (!anomalousState.blackHoleSpawned) {
+            // Spawn black hole after delay
+            const spawnPosition = new THREE.Vector3(0, 0, 10);
+            blackHole = new BlackHole(spawnPosition);
+            scene.add(blackHole.mesh);
+            anomalousState.blackHoleSpawned = true;
+            anomalousState.isVibrating = false;
+            anomalousState.blackHoleSpawnTime = currentTime;
+
+            particleNets.forEach(net => {
+                net.mesh.position.lerp(net.basePosition, 0.5);
+            });
+        }
+        return;
+    }
+
+    // Check if black hole is active
+    if (blackHole) {
+        blackHole.update(deltaTime);
+
+        particleNets.forEach(net => {
+            blackHole.applyAttractionToMesh(net, deltaTime);
+        });
+
+        // Check collision with anomalous mesh
+        if (anomalousState.mesh && blackHole.checkCollision(anomalousState.mesh)) {
+            // Remove anomalous mesh
+            scene.remove(anomalousState.mesh.mesh);
+            anomalousState.mesh.geometry.dispose();
+            anomalousState.mesh.material.dispose();
+            const index = particleNets.indexOf(anomalousState.mesh);
+            if (index > -1) {
+                particleNets.splice(index, 1);
+            }
+
+            // Remove black hole
+            blackHole.remove();
+            blackHole = null;
+
+            // Reset anomalous state
+            anomalousState.isVibrating = false;
+            anomalousState.blackHoleSpawned = false;
+            anomalousState.mesh = null;
+
+            // Return to IDLE
+            stateMachine.setState(InteractionState.IDLE, currentTime);
+        }
+        return;
+    }
+
+    // No active global events, return to IDLE
+    stateMachine.setState(InteractionState.IDLE, currentTime);
+}
+
 // Animation loop with stability safeguards
 const clock = new THREE.Clock();
 let isAnimating = false; // Prevent concurrent animation frames
@@ -1055,6 +1350,35 @@ function animate() {
         const deltaTime = Math.min(clock.getDelta(), 0.1); // Cap deltaTime to prevent large jumps
         const currentTime = clock.elapsedTime;
 
+        // STATE MACHINE: Handle animations based on current state
+        switch (stateMachine.currentState) {
+            case InteractionState.IDLE:
+                // IDLE: Only run passive idle animations
+                updateIdleState(deltaTime, currentTime);
+                break;
+
+            case InteractionState.CLICK_INTERACTION:
+                // CLICK: Morphing + idle animations
+                updateClickInteractionState(deltaTime, currentTime);
+                break;
+
+            case InteractionState.GESTURE_INTERACTION:
+                // GESTURE: Gesture forces + idle animations
+                updateGestureInteractionState(deltaTime, currentTime);
+                break;
+
+            case InteractionState.GLOBAL_EVENT:
+                // GLOBAL: Anomaly, vortex, black hole events
+                updateGlobalEventState(deltaTime, currentTime);
+                break;
+
+            case InteractionState.RESET:
+                // RESET: Transition back to idle
+                // resetSystem handles transition
+                break;
+        }
+
+        // LEGACY: Keep old system for backwards compatibility during transition
         // Update vortex animation (overrides other forces)
         updateVortexAnimation(currentTime, deltaTime);
 
@@ -1502,17 +1826,24 @@ function detectGesture() {
             }
         }
 
-        // If a gesture is detected, activate it for 3 seconds
-        // CRITICAL: Only activate if no gesture is currently active (prevent timer reset)
+        // STATE MACHINE: If gesture detected, activate and transition state
         if (detectedGesture && !handTrackingState.activeGesture) {
-            handTrackingState.currentGesture = detectedGesture;
-            handTrackingState.activeGesture = detectedGesture;
-            handTrackingState.gestureStartTime = currentTime;
-            handTrackingState.gestureTargetForce.copy(forceVector);
+            // Only activate gesture in IDLE or GESTURE_INTERACTION states
+            if (stateMachine.isState(InteractionState.IDLE) ||
+                stateMachine.isState(InteractionState.GESTURE_INTERACTION)) {
 
-            console.log(`Gesture detected: ${detectedGesture} - Active for ${handTrackingState.gestureDuration}s`);
+                handTrackingState.currentGesture = detectedGesture;
+                handTrackingState.activeGesture = detectedGesture;
+                handTrackingState.gestureStartTime = currentTime;
+                handTrackingState.gestureTargetForce.copy(forceVector);
 
-            // Update UI immediately
+                // Transition to GESTURE_INTERACTION state
+                stateMachine.setState(InteractionState.GESTURE_INTERACTION, currentTime, {
+                    gesture: detectedGesture
+                });
+
+                console.log(`Gesture: ${detectedGesture} (${handTrackingState.gestureDuration}s)`);
+            }
         }
     }
 }
@@ -1553,13 +1884,20 @@ function updateGestureForces(currentTime) {
     }
 }
 
-// Start vortex sequence
+// STATE MACHINE: Start vortex sequence with state transition
 function startVortexSequence() {
+    const currentTime = performance.now() / 1000;
+
+    // Transition to GLOBAL_EVENT state
+    stateMachine.setState(InteractionState.GLOBAL_EVENT, currentTime, {
+        eventType: 'vortex'
+    });
+
     vortexState.active = true;
-    vortexState.startTime = performance.now() / 1000; // Convert to seconds
+    vortexState.startTime = currentTime;
     vortexState.vortexCenter.set(0, 0, 0);
 
-    console.log('Vortex sequence started at:', vortexState.startTime);
+    console.log('Vortex sequence started');
 }
 
 // Update vortex animation
@@ -1576,9 +1914,13 @@ function updateVortexAnimation(currentTime, deltaTime) {
         // Phase 2: Explosion at exactly 6 seconds
         triggerExplosion();
     } else if (elapsed > vortexState.duration + 0.3) {
-        // Phase 3: Reset after flash
+        // Phase 3: Reset after flash and return to IDLE
         vortexState.active = false;
-        console.log('Vortex sequence complete');
+
+        // STATE MACHINE: Transition back to IDLE
+        stateMachine.setState(InteractionState.IDLE, currentTime);
+
+        console.log('Vortex complete - returning to IDLE');
     }
 }
 
