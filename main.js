@@ -28,6 +28,129 @@ const geometryTracker = {
     availableTypes: []
 };
 
+// ANIMATION SYSTEM: Time-based, non-blocking easing functions
+const EasingFunctions = {
+    // Linear (no easing)
+    linear: (t) => t,
+
+    // Ease in/out cubic (smooth)
+    easeInOutCubic: (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+
+    // Ease out quadratic (decelerate)
+    easeOutQuad: (t) => 1 - (1 - t) * (1 - t),
+
+    // Ease in quadratic (accelerate)
+    easeInQuad: (t) => t * t,
+
+    // Ease out exponential (smooth stop)
+    easeOutExpo: (t) => t === 1 ? 1 : 1 - Math.pow(2, -10 * t),
+
+    // Ease in exponential (smooth start)
+    easeInExpo: (t) => t === 0 ? 0 : Math.pow(2, 10 * t - 10),
+
+    // Bounce (playful)
+    easeOutBounce: (t) => {
+        const n1 = 7.5625;
+        const d1 = 2.75;
+        if (t < 1 / d1) {
+            return n1 * t * t;
+        } else if (t < 2 / d1) {
+            return n1 * (t -= 1.5 / d1) * t + 0.75;
+        } else if (t < 2.5 / d1) {
+            return n1 * (t -= 2.25 / d1) * t + 0.9375;
+        } else {
+            return n1 * (t -= 2.625 / d1) * t + 0.984375;
+        }
+    }
+};
+
+// ANIMATION SYSTEM: Animation controller for safe, interruptible animations
+const animationController = {
+    activeAnimations: new Map(), // animationId -> animationData
+    nextId: 0,
+
+    // Create new animation
+    create(config) {
+        const id = this.nextId++;
+        const animation = {
+            id,
+            startTime: performance.now() / 1000,
+            duration: config.duration || 1.0,
+            easing: config.easing || EasingFunctions.linear,
+            onUpdate: config.onUpdate || (() => {}),
+            onComplete: config.onComplete || (() => {}),
+            isActive: true,
+            canInterrupt: config.canInterrupt !== false
+        };
+
+        this.activeAnimations.set(id, animation);
+        return id;
+    },
+
+    // Update animation (call every frame)
+    update(id, currentTime) {
+        const anim = this.activeAnimations.get(id);
+        if (!anim || !anim.isActive) return false;
+
+        const elapsed = currentTime - anim.startTime;
+        const progress = Math.min(elapsed / anim.duration, 1.0);
+        const easedProgress = anim.easing(progress);
+
+        try {
+            anim.onUpdate(easedProgress, progress);
+
+            if (progress >= 1.0) {
+                anim.onComplete();
+                this.remove(id);
+                return false; // Animation complete
+            }
+
+            return true; // Animation ongoing
+        } catch (error) {
+            console.warn(`Animation ${id} error:`, error);
+            this.remove(id);
+            return false;
+        }
+    },
+
+    // Interrupt and remove animation
+    interrupt(id) {
+        const anim = this.activeAnimations.get(id);
+        if (anim && anim.canInterrupt) {
+            anim.isActive = false;
+            this.activeAnimations.delete(id);
+            return true;
+        }
+        return false;
+    },
+
+    // Remove animation
+    remove(id) {
+        this.activeAnimations.delete(id);
+    },
+
+    // Update all active animations
+    updateAll(currentTime) {
+        for (const [id, anim] of this.activeAnimations) {
+            this.update(id, currentTime);
+        }
+    },
+
+    // Clear all animations
+    clearAll() {
+        this.activeAnimations.clear();
+    },
+
+    // Clear animations by filter
+    clearWhere(filter) {
+        for (const [id, anim] of this.activeAnimations) {
+            if (filter(anim)) {
+                this.interrupt(id);
+            }
+        }
+    }
+};
+
 // STATE MACHINE: Interaction state management for clean, non-overlapping states
 const InteractionState = {
     IDLE: 'idle',
@@ -572,14 +695,15 @@ class ParticleNet {
         this.currentColor = initialColor;
         this.hasBeenClicked = false; // Track if mesh has been interacted with
 
-        // Morphing state
-        this.isMorphing = false;
-        this.morphProgress = 0;
+        // Morphing state (time-based animation)
+        this.morphAnimationId = null; // Animation controller ID
         this.morphDuration = 1.0; // seconds
         this.sourcePositions = null;
         this.targetPositions = null;
         this.sourceColor = null;
         this.targetColor = null;
+        this.morphSourceCount = 0;
+        this.morphTargetCount = 0;
 
         // Create mesh structure
         this.createMesh();
@@ -624,8 +748,13 @@ class ParticleNet {
         geometryTracker.usedGeometries.set(this.meshId, this.currentGeometryType);
     }
 
+    // Backward compatibility: check if currently morphing
+    get isMorphing() {
+        return this.morphAnimationId !== null;
+    }
+
     morphToNewShape(newGeometryType, newColor) {
-        // STABILITY: Strict morphing lock to prevent concurrent morphs
+        // ANIMATION SYSTEM: Non-blocking morphing using animation controller
         if (this.isMorphing) {
             return; // Already morphing, silently ignore to prevent conflicts
         }
@@ -649,173 +778,144 @@ class ParticleNet {
                 return this.morphToNewShape(randomType, newColor); // Recursive call with different type
             }
 
-            // Start morphing with lock
-            this.isMorphing = true;
-            this.morphProgress = 0;
-            this.sourceColor = new THREE.Color(this.material.color);
-            this.targetColor = new THREE.Color(newColor);
-        } catch (error) {
-            console.warn(`Morph failed for mesh ${this.meshId}:`, error);
-            this.isMorphing = false; // Release lock on error
-            return;
-        }
+            // Prepare morphing data
+            const sourceColor = new THREE.Color(this.material.color);
+            const targetColor = new THREE.Color(newColor);
+            const previousGeometryType = this.currentGeometryType;
 
-        // Store the current geometry type before morphing
-        const previousGeometryType = this.currentGeometryType;
+            // Generate target geometry and extract positions
+            const targetBaseGeometry = geometryGenerators[finalGeometryType](this.size);
+            const targetWireframe = new THREE.WireframeGeometry(targetBaseGeometry);
+            const targetPositions = targetWireframe.attributes.position.array;
 
-        // PERFORMANCE FIX: Generate target geometry and extract positions, then immediately dispose
-        const targetBaseGeometry = geometryGenerators[finalGeometryType](this.size);
-        const targetWireframe = new THREE.WireframeGeometry(targetBaseGeometry);
-        const targetPositions = targetWireframe.attributes.position.array;
-
-        // STABILITY: Validate geometry structure BEFORE accessing attributes
-        if (!this.geometry || !this.geometry.attributes || !this.geometry.attributes.position) {
-            console.warn(`Mesh ${this.meshId} has invalid geometry, aborting morph`);
-            try {
+            // Validate geometry structure
+            if (!this.geometry || !this.geometry.attributes || !this.geometry.attributes.position) {
+                console.warn(`Mesh ${this.meshId} has invalid geometry, aborting morph`);
                 targetBaseGeometry.dispose();
                 targetWireframe.dispose();
-            } catch (e) {}
-            this.isMorphing = false;
-            return;
-        }
+                return;
+            }
 
-        // Get source positions (safe after validation)
-        const sourcePositions = this.geometry.attributes.position.array;
+            const sourcePositions = this.geometry.attributes.position.array;
 
-        // Enhanced safety checks for geometry validation
-        if (!sourcePositions || sourcePositions.length === 0 || !targetPositions || targetPositions.length === 0) {
-            console.error(`Mesh ${this.meshId} has empty geometry, aborting morph`);
-            // Clean up temporary geometries
+            // Validate positions
+            if (!sourcePositions || sourcePositions.length === 0 || !targetPositions || targetPositions.length === 0) {
+                console.error(`Mesh ${this.meshId} has empty geometry, aborting morph`);
+                targetBaseGeometry.dispose();
+                targetWireframe.dispose();
+                return;
+            }
+
+            // Prepare position arrays
+            const sourceCount = sourcePositions.length;
+            const targetCount = targetPositions.length;
+            const maxCount = Math.max(sourceCount, targetCount);
+
+            this.sourcePositions = new Float32Array(maxCount);
+            this.targetPositions = new Float32Array(maxCount);
+            this.morphSourceCount = sourceCount;
+            this.morphTargetCount = targetCount;
+
+            // Copy source positions
+            for (let i = 0; i < sourceCount; i++) {
+                this.sourcePositions[i] = sourcePositions[i];
+            }
+            if (sourceCount < maxCount && sourceCount > 0) {
+                const lastValue = sourcePositions[sourceCount - 1];
+                for (let i = sourceCount; i < maxCount; i++) {
+                    this.sourcePositions[i] = lastValue;
+                }
+            }
+
+            // Copy target positions
+            for (let i = 0; i < targetCount; i++) {
+                this.targetPositions[i] = targetPositions[i];
+            }
+            if (targetCount < maxCount && targetCount > 0) {
+                const lastValue = targetPositions[targetCount - 1];
+                for (let i = targetCount; i < maxCount; i++) {
+                    this.targetPositions[i] = lastValue;
+                }
+            }
+
+            // Dispose temporary geometries
             targetBaseGeometry.dispose();
             targetWireframe.dispose();
-            this.isMorphing = false;
-            return;
+
+            console.log(`Morphing mesh ${this.meshId} from ${previousGeometryType} to ${finalGeometryType} (${sourceCount} → ${targetCount} vertices)`);
+
+            // ANIMATION SYSTEM: Create time-based morphing animation
+            this.morphAnimationId = animationController.create({
+                duration: this.morphDuration,
+                easing: EasingFunctions.easeInOutCubic,
+                onUpdate: (easedProgress) => {
+                    // Update vertex positions
+                    const positions = this.geometry.attributes.position;
+                    const arrayLength = Math.min(this.sourcePositions.length, positions.array.length);
+
+                    for (let i = 0; i < arrayLength; i++) {
+                        positions.array[i] = this.sourcePositions[i] +
+                            (this.targetPositions[i] - this.sourcePositions[i]) * easedProgress;
+                    }
+                    positions.needsUpdate = true;
+
+                    // Interpolate color
+                    this.material.color.lerpColors(sourceColor, targetColor, easedProgress);
+                },
+                onComplete: () => {
+                    // Morphing complete - finalize geometry
+                    const finalBaseGeometry = geometryGenerators[finalGeometryType](this.size);
+                    const finalWireframe = new THREE.WireframeGeometry(finalBaseGeometry);
+                    finalBaseGeometry.dispose();
+
+                    // Replace geometry
+                    this.geometry.dispose();
+                    this.geometry = finalWireframe;
+                    this.mesh.geometry = this.geometry;
+
+                    // Update material color
+                    this.material.color.copy(targetColor);
+                    this.currentColor = targetColor.getHex();
+
+                    // Update original positions for wind physics
+                    this.originalPositions = [];
+                    const positions = this.geometry.attributes.position;
+                    for (let i = 0; i < positions.count; i++) {
+                        this.originalPositions.push(new THREE.Vector3(
+                            positions.getX(i),
+                            positions.getY(i),
+                            positions.getZ(i)
+                        ));
+                    }
+
+                    // Clear morphing data
+                    this.sourcePositions = null;
+                    this.targetPositions = null;
+                    this.morphSourceCount = 0;
+                    this.morphTargetCount = 0;
+                    this.morphAnimationId = null;
+
+                    console.log(`Morphing complete for mesh ${this.meshId}`);
+                },
+                canInterrupt: false // Cannot interrupt morphing
+            });
+
+            // Update geometry type tracker
+            geometryTracker.usedGeometries.set(this.meshId, finalGeometryType);
+            this.currentGeometryType = finalGeometryType;
+
+        } catch (error) {
+            console.warn(`Morph failed for mesh ${this.meshId}:`, error);
+            this.morphAnimationId = null;
         }
-
-        // PERFORMANCE FIX: Use actual vertex count, not padded arrays
-        // This reduces memory usage and update loops
-        const sourceCount = sourcePositions.length;
-        const targetCount = targetPositions.length;
-
-        // Store vertex counts for optimization
-        this.morphSourceCount = sourceCount;
-        this.morphTargetCount = targetCount;
-
-        // Allocate arrays based on actual max count
-        const maxCount = Math.max(sourceCount, targetCount);
-        this.sourcePositions = new Float32Array(maxCount);
-        this.targetPositions = new Float32Array(maxCount);
-
-        // Copy source positions
-        for (let i = 0; i < sourceCount; i++) {
-            this.sourcePositions[i] = sourcePositions[i];
-        }
-
-        // Fill remaining with last position if source is smaller
-        if (sourceCount < maxCount && sourceCount > 0) {
-            const lastValue = sourcePositions[sourceCount - 1];
-            for (let i = sourceCount; i < maxCount; i++) {
-                this.sourcePositions[i] = lastValue;
-            }
-        }
-
-        // Copy target positions
-        for (let i = 0; i < targetCount; i++) {
-            this.targetPositions[i] = targetPositions[i];
-        }
-
-        // Fill remaining with last position if target is smaller
-        if (targetCount < maxCount && targetCount > 0) {
-            const lastValue = targetPositions[targetCount - 1];
-            for (let i = targetCount; i < maxCount; i++) {
-                this.targetPositions[i] = lastValue;
-            }
-        }
-
-        // CRITICAL: Dispose temporary geometries immediately to prevent memory leak
-        targetBaseGeometry.dispose();
-        targetWireframe.dispose();
-
-        // Update geometry type tracker
-        geometryTracker.usedGeometries.set(this.meshId, finalGeometryType);
-        this.currentGeometryType = finalGeometryType;
-
-        console.log(`Morphing mesh ${this.meshId} from ${previousGeometryType} to ${finalGeometryType} (${sourceCount} → ${targetCount} vertices)`);
     }
+
+    // REMOVED: updateMorphing() - now handled by animation controller
 
     updateMorphing(deltaTime) {
-        if (!this.isMorphing) return;
-
-        this.morphProgress += deltaTime / this.morphDuration;
-
-        if (this.morphProgress >= 1.0) {
-            // Morphing complete
-            this.morphProgress = 1.0;
-            this.isMorphing = false;
-
-            // PERFORMANCE FIX: Generate final geometry and dispose base geometry
-            const finalBaseGeometry = geometryGenerators[this.currentGeometryType](this.size);
-            const finalWireframe = new THREE.WireframeGeometry(finalBaseGeometry);
-
-            // CRITICAL: Dispose base geometry immediately after wireframe creation
-            finalBaseGeometry.dispose();
-
-            // Dispose old geometry
-            this.geometry.dispose();
-
-            // Update geometry
-            this.geometry = finalWireframe;
-            this.mesh.geometry = this.geometry;
-
-            // Update material color
-            this.material.color.copy(this.targetColor);
-            this.currentColor = this.targetColor.getHex();
-
-            // Update original positions for wind physics
-            this.originalPositions = [];
-            const positions = this.geometry.attributes.position;
-            for (let i = 0; i < positions.count; i++) {
-                this.originalPositions.push(new THREE.Vector3(
-                    positions.getX(i),
-                    positions.getY(i),
-                    positions.getZ(i)
-                ));
-            }
-
-            // Clear morphing data to free memory
-            this.sourcePositions = null;
-            this.targetPositions = null;
-            this.sourceColor = null;
-            this.targetColor = null;
-            this.morphSourceCount = 0;
-            this.morphTargetCount = 0;
-
-            console.log(`Morphing complete for mesh ${this.meshId}`);
-        } else {
-            // PERFORMANCE OPTIMIZATION: Only update the actual vertex count, not padded values
-            const eased = this.easeInOutCubic(this.morphProgress);
-            const positions = this.geometry.attributes.position;
-
-            // CRITICAL FIX: Ensure we don't write beyond the actual geometry buffer
-            // Use the minimum of sourcePositions length and actual buffer length
-            const arrayLength = Math.min(this.sourcePositions.length, positions.array.length);
-
-            // Update positions in place (safe bounds)
-            for (let i = 0; i < arrayLength; i++) {
-                positions.array[i] = this.sourcePositions[i] +
-                    (this.targetPositions[i] - this.sourcePositions[i]) * eased;
-            }
-
-            // Mark buffer as needing update
-            positions.needsUpdate = true;
-
-            // Interpolate color
-            this.material.color.lerpColors(this.sourceColor, this.targetColor, eased);
-        }
-    }
-
-    easeInOutCubic(t) {
-        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        // ANIMATION SYSTEM: Morphing is now handled by the animation controller
+        // This method is kept for backward compatibility but does nothing
+        // The animation controller automatically updates all morphing animations
     }
 
     updateIdle(deltaTime) {
@@ -1474,6 +1574,9 @@ function animate() {
     try {
         const deltaTime = Math.min(clock.getDelta(), 0.1); // Cap deltaTime to prevent large jumps
         const currentTime = clock.elapsedTime;
+
+        // ANIMATION SYSTEM: Update all active time-based animations
+        animationController.updateAll(currentTime);
 
         // STATE MACHINE: Handle animations based on current state
         switch (stateMachine.currentState) {
@@ -2145,27 +2248,20 @@ function triggerExplosion() {
     });
 }
 
-// Animate mesh to new position smoothly
+// ANIMATION SYSTEM: Animate mesh to new position using animation controller
 function animateMeshToPosition(mesh, startPos, targetPos, duration, onUpdate = null) {
-    const startTime = performance.now() / 1000;
-
-    function animate(currentTime) {
-        const elapsed = currentTime - startTime;
-        const progress = Math.min(elapsed / duration, 1.0);
-
-        // Ease out cubic
-        const eased = 1 - Math.pow(1 - progress, 3);
-
-        mesh.position.lerpVectors(startPos, targetPos, eased);
-
-        if (onUpdate) onUpdate();
-
-        if (progress < 1.0) {
-            requestAnimationFrame(() => animate(performance.now() / 1000));
-        }
-    }
-
-    requestAnimationFrame(() => animate(performance.now() / 1000));
+    animationController.create({
+        duration: duration,
+        easing: EasingFunctions.easeOutQuad,
+        onUpdate: (easedProgress) => {
+            mesh.position.lerpVectors(startPos, targetPos, easedProgress);
+            if (onUpdate) onUpdate();
+        },
+        onComplete: () => {
+            // Animation complete
+        },
+        canInterrupt: true
+    });
 }
 
 // Start hand tracking camera
