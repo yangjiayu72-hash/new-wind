@@ -515,7 +515,141 @@ class ParticleNet {
         // Recover mesh position
         this.mesh.position.lerp(this.basePosition, deltaTime * recoverySpeed);
     }
+
+    updateVibration(intensity) {
+        // Apply rapid vibration to mesh position
+        const vibrationAmount = intensity * 0.5;
+        this.mesh.position.x += (Math.random() - 0.5) * vibrationAmount;
+        this.mesh.position.y += (Math.random() - 0.5) * vibrationAmount;
+        this.mesh.position.z += (Math.random() - 0.5) * vibrationAmount * 0.3;
+
+        // Vibrate vertices for more dramatic effect
+        const positions = this.geometry.attributes.position;
+        for (let i = 0; i < positions.count; i++) {
+            const original = this.originalPositions[i];
+            const shake = intensity * 0.1;
+            positions.setXYZ(
+                i,
+                original.x + (Math.random() - 0.5) * shake,
+                original.y + (Math.random() - 0.5) * shake,
+                original.z + (Math.random() - 0.5) * shake
+            );
+        }
+        positions.needsUpdate = true;
+    }
 }
+
+// Anomalous mesh state
+const anomalousState = {
+    mesh: null,
+    meshId: -1,
+    isVibrating: false,
+    vibrationStartTime: 0,
+    vibrationIntensity: 1.0,
+    blackHoleSpawned: false,
+    blackHoleSpawnTime: 0,
+    delayDuration: 3.0 // seconds
+};
+
+// Black Hole class
+class BlackHole {
+    constructor(position) {
+        this.position = position.clone();
+        this.radius = 3.0;
+        this.attractionRadius = 30.0;
+        this.attractionForce = 15.0;
+        this.isDragging = false;
+
+        // Create visual representation
+        this.createVisual();
+    }
+
+    createVisual() {
+        // Black core
+        const coreGeometry = new THREE.SphereGeometry(this.radius, 32, 32);
+        const coreMaterial = new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.9
+        });
+        this.core = new THREE.Mesh(coreGeometry, coreMaterial);
+        this.core.position.copy(this.position);
+
+        // Purple glow
+        const glowGeometry = new THREE.SphereGeometry(this.radius * 1.5, 32, 32);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: 0x8800ff,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.BackSide
+        });
+        this.glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        this.glow.position.copy(this.position);
+
+        // Outer glow
+        const outerGlowGeometry = new THREE.SphereGeometry(this.radius * 2.5, 32, 32);
+        const outerGlowMaterial = new THREE.MeshBasicMaterial({
+            color: 0x4400aa,
+            transparent: true,
+            opacity: 0.15,
+            side: THREE.BackSide
+        });
+        this.outerGlow = new THREE.Mesh(outerGlowGeometry, outerGlowMaterial);
+        this.outerGlow.position.copy(this.position);
+
+        // Group for userData
+        this.mesh = new THREE.Group();
+        this.mesh.add(this.core);
+        this.mesh.add(this.glow);
+        this.mesh.add(this.outerGlow);
+        this.mesh.position.copy(this.position);
+        this.mesh.userData.blackHole = this;
+    }
+
+    update(deltaTime) {
+        // Animate glow pulsing
+        const time = performance.now() / 1000;
+        const pulse = Math.sin(time * 3) * 0.1 + 1.0;
+        this.glow.scale.setScalar(pulse);
+        this.outerGlow.scale.setScalar(pulse * 1.2);
+
+        // Rotate core
+        this.core.rotation.y += deltaTime * 0.5;
+        this.core.rotation.z += deltaTime * 0.3;
+    }
+
+    applyAttractionToMesh(particleNet, deltaTime) {
+        const meshPos = particleNet.mesh.position;
+        const toBlackHole = new THREE.Vector3().subVectors(this.position, meshPos);
+        const distance = toBlackHole.length();
+
+        if (distance < this.attractionRadius && distance > 0.1) {
+            const strength = this.attractionForce * (1 - distance / this.attractionRadius);
+            const force = toBlackHole.normalize().multiplyScalar(strength * deltaTime);
+            particleNet.mesh.position.add(force);
+        }
+    }
+
+    checkCollision(particleNet) {
+        const meshPos = particleNet.mesh.position;
+        const distance = this.position.distanceTo(meshPos);
+        return distance < this.radius + 2.0; // Collision threshold
+    }
+
+    remove() {
+        if (this.mesh.parent) {
+            this.mesh.parent.remove(this.mesh);
+        }
+        this.core.geometry.dispose();
+        this.core.material.dispose();
+        this.glow.geometry.dispose();
+        this.glow.material.dispose();
+        this.outerGlow.geometry.dispose();
+        this.outerGlow.material.dispose();
+    }
+}
+
+let blackHole = null;
 
 // Create particle networks with unique geometries
 const particleNets = [];
@@ -545,10 +679,35 @@ for (let i = 0; i < numNets; i++) {
 
 console.log(`Created ${numNets} meshes with unique geometries`);
 
+// Create one anomalous mesh with distinct appearance
+const anomalousMeshId = numNets;
+const anomalousPosition = new THREE.Vector3(
+    (Math.random() - 0.5) * 60,
+    (Math.random() - 0.5) * 60,
+    (Math.random() - 0.5) * 40
+);
+const anomalousSize = 5; // Larger than normal meshes
+const anomalousGeometryType = getUniqueGeometryType(usedGeometryTypes);
+const anomalousNet = new ParticleNet(anomalousPosition, anomalousSize, 0.5, anomalousGeometryType, anomalousMeshId);
+
+// Make it visually distinct with bright yellow color and higher opacity
+anomalousNet.material.color.setHex(0xffff00); // Bright yellow
+anomalousNet.material.opacity = 1.0; // Full opacity
+anomalousNet.currentColor = 0xffff00;
+
+particleNets.push(anomalousNet);
+scene.add(anomalousNet.mesh);
+
+// Store reference to anomalous mesh
+anomalousState.mesh = anomalousNet;
+anomalousState.meshId = anomalousMeshId;
+
+console.log(`Created anomalous mesh at ID ${anomalousMeshId} (yellow, larger size)`);
+
 
 // Grid and black hole removed - only 3D particle meshes remain
 
-// Click detection for mesh morphing
+// Click detection for mesh morphing and anomalous mesh
 document.addEventListener('click', (event) => {
     // Update mouse position
     const rect = renderer.domElement.getBoundingClientRect();
@@ -564,15 +723,74 @@ document.addEventListener('click', (event) => {
         const clickedMesh = intersects[0].object;
         const particleNet = clickedMesh.userData.particleNet;
 
-        if (particleNet && !particleNet.isMorphing) {
-            // Morph to new shape with new color
-            const newColor = getRandomColor();
-            particleNet.morphToNewShape(null, newColor);
-            console.log(`Clicked mesh ${particleNet.meshId} - morphing to new shape`);
+        if (particleNet) {
+            // Check if anomalous mesh was clicked
+            if (particleNet.meshId === anomalousState.meshId && !anomalousState.isVibrating) {
+                // Start vibration sequence
+                anomalousState.isVibrating = true;
+                anomalousState.vibrationStartTime = performance.now() / 1000;
+                console.log('Anomalous mesh clicked! Starting vibration sequence...');
+            } else if (!particleNet.isMorphing && particleNet.meshId !== anomalousState.meshId) {
+                // Normal mesh morphing
+                const newColor = getRandomColor();
+                particleNet.morphToNewShape(null, newColor);
+                console.log(`Clicked mesh ${particleNet.meshId} - morphing to new shape`);
+            }
         }
     }
 });
 
+// Black hole drag controls
+let isDraggingBlackHole = false;
+const dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+const dragIntersection = new THREE.Vector3();
+
+document.addEventListener('mousedown', (event) => {
+    if (!blackHole) return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    // Check if black hole was clicked
+    const intersects = raycaster.intersectObject(blackHole.mesh, true);
+    if (intersects.length > 0) {
+        isDraggingBlackHole = true;
+        blackHole.isDragging = true;
+        console.log('Started dragging black hole');
+    }
+});
+
+document.addEventListener('mousemove', (event) => {
+    if (!isDraggingBlackHole || !blackHole) return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    // Project mouse position onto plane at black hole's Z depth
+    dragPlane.constant = -blackHole.position.z;
+    raycaster.ray.intersectPlane(dragPlane, dragIntersection);
+
+    if (dragIntersection) {
+        blackHole.position.copy(dragIntersection);
+        blackHole.mesh.position.copy(dragIntersection);
+    }
+});
+
+document.addEventListener('mouseup', () => {
+    if (isDraggingBlackHole) {
+        isDraggingBlackHole = false;
+        if (blackHole) {
+            blackHole.isDragging = false;
+        }
+        console.log('Stopped dragging black hole');
+    }
+});
 
 // Keyboard controls
 document.addEventListener('keydown', (e) => {
@@ -637,8 +855,65 @@ function animate() {
     // Update vortex animation (overrides other forces)
     updateVortexAnimation(currentTime, deltaTime);
 
+    // Update anomalous mesh vibration sequence
+    if (anomalousState.isVibrating) {
+        const elapsed = currentTime - anomalousState.vibrationStartTime;
+
+        if (elapsed < anomalousState.delayDuration) {
+            // Apply vibration to all meshes
+            particleNets.forEach(net => {
+                net.updateVibration(anomalousState.vibrationIntensity);
+            });
+
+            console.log(`Vibration active: ${elapsed.toFixed(2)}s / ${anomalousState.delayDuration}s`);
+        } else if (!anomalousState.blackHoleSpawned) {
+            // Spawn black hole after 3 seconds
+            const spawnPosition = new THREE.Vector3(0, 0, 10);
+            blackHole = new BlackHole(spawnPosition);
+            scene.add(blackHole.mesh);
+            anomalousState.blackHoleSpawned = true;
+            anomalousState.blackHoleSpawnTime = currentTime;
+            console.log('Black hole spawned at center! Drag it to absorb the anomalous mesh.');
+        }
+    }
+
+    // Update black hole if it exists
+    if (blackHole) {
+        blackHole.update(deltaTime);
+
+        // Apply attraction force to all meshes
+        particleNets.forEach(net => {
+            blackHole.applyAttractionToMesh(net, deltaTime);
+        });
+
+        // Check collision with anomalous mesh
+        if (anomalousState.mesh && blackHole.checkCollision(anomalousState.mesh)) {
+            console.log('Anomalous mesh absorbed by black hole! Restoring normal state...');
+
+            // Remove anomalous mesh
+            scene.remove(anomalousState.mesh.mesh);
+            anomalousState.mesh.geometry.dispose();
+            anomalousState.mesh.material.dispose();
+            const index = particleNets.indexOf(anomalousState.mesh);
+            if (index > -1) {
+                particleNets.splice(index, 1);
+            }
+
+            // Remove black hole
+            blackHole.remove();
+            blackHole = null;
+
+            // Reset anomalous state
+            anomalousState.isVibrating = false;
+            anomalousState.blackHoleSpawned = false;
+            anomalousState.mesh = null;
+
+            console.log('Scene restored to normal. Anomalous mesh removed.');
+        }
+    }
+
     // Only apply normal physics if vortex is not active
-    if (!vortexState.active) {
+    if (!vortexState.active && !anomalousState.isVibrating) {
         // Smooth wind strength transition
         const strengthDelta = windState.targetStrength - windState.strength;
         windState.strength += strengthDelta * deltaTime * 5;
