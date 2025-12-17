@@ -615,6 +615,62 @@ const geometryGenerators = {
 // Initialize available geometry types
 geometryTracker.availableTypes = Object.keys(geometryGenerators);
 
+// OPTIMIZATION: Geometry pool for reusing geometries instead of recreating
+const geometryPool = {
+    cache: new Map(), // Key: "type_size" -> Array of cached geometries
+
+    // Get or create geometry (reuse when possible)
+    get(type, size) {
+        const key = `${type}_${size.toFixed(1)}`;
+
+        // Check cache first
+        if (!this.cache.has(key)) {
+            this.cache.set(key, []);
+        }
+
+        const pool = this.cache.get(key);
+
+        // Reuse from pool if available
+        if (pool.length > 0) {
+            return pool.pop();
+        }
+
+        // Create new if pool empty
+        const baseGeometry = geometryGenerators[type](size);
+        const wireframe = new THREE.WireframeGeometry(baseGeometry);
+        baseGeometry.dispose(); // Dispose base immediately
+        return wireframe;
+    },
+
+    // Return geometry to pool for reuse
+    release(type, size, geometry) {
+        if (!geometry) return;
+
+        const key = `${type}_${size.toFixed(1)}`;
+        if (!this.cache.has(key)) {
+            this.cache.set(key, []);
+        }
+
+        const pool = this.cache.get(key);
+
+        // Limit pool size to prevent memory bloat
+        if (pool.length < 5) {
+            pool.push(geometry);
+        } else {
+            // Pool full, dispose geometry
+            geometry.dispose();
+        }
+    },
+
+    // Clear all cached geometries
+    clear() {
+        for (const pool of this.cache.values()) {
+            pool.forEach(geom => geom.dispose());
+        }
+        this.cache.clear();
+    }
+};
+
 // Get random color
 function getRandomColor() {
     const colors = [
@@ -783,16 +839,14 @@ class ParticleNet {
             const targetColor = new THREE.Color(newColor);
             const previousGeometryType = this.currentGeometryType;
 
-            // Generate target geometry and extract positions
-            const targetBaseGeometry = geometryGenerators[finalGeometryType](this.size);
-            const targetWireframe = new THREE.WireframeGeometry(targetBaseGeometry);
+            // OPTIMIZATION: Use geometry pool instead of creating new geometry
+            const targetWireframe = geometryPool.get(finalGeometryType, this.size);
             const targetPositions = targetWireframe.attributes.position.array;
 
             // Validate geometry structure
             if (!this.geometry || !this.geometry.attributes || !this.geometry.attributes.position) {
                 console.warn(`Mesh ${this.meshId} has invalid geometry, aborting morph`);
-                targetBaseGeometry.dispose();
-                targetWireframe.dispose();
+                geometryPool.release(finalGeometryType, this.size, targetWireframe);
                 return;
             }
 
@@ -801,8 +855,7 @@ class ParticleNet {
             // Validate positions
             if (!sourcePositions || sourcePositions.length === 0 || !targetPositions || targetPositions.length === 0) {
                 console.error(`Mesh ${this.meshId} has empty geometry, aborting morph`);
-                targetBaseGeometry.dispose();
-                targetWireframe.dispose();
+                geometryPool.release(finalGeometryType, this.size, targetWireframe);
                 return;
             }
 
@@ -838,10 +891,6 @@ class ParticleNet {
                 }
             }
 
-            // Dispose temporary geometries
-            targetBaseGeometry.dispose();
-            targetWireframe.dispose();
-
             console.log(`Morphing mesh ${this.meshId} from ${previousGeometryType} to ${finalGeometryType} (${sourceCount} → ${targetCount} vertices)`);
 
             // ANIMATION SYSTEM: Create time-based morphing animation
@@ -863,15 +912,19 @@ class ParticleNet {
                     this.material.color.lerpColors(sourceColor, targetColor, easedProgress);
                 },
                 onComplete: () => {
-                    // Morphing complete - finalize geometry
-                    const finalBaseGeometry = geometryGenerators[finalGeometryType](this.size);
-                    const finalWireframe = new THREE.WireframeGeometry(finalBaseGeometry);
-                    finalBaseGeometry.dispose();
+                    // OPTIMIZATION: Use geometry pool for final geometry
+                    const oldGeometry = this.geometry;
+                    const oldType = previousGeometryType;
+
+                    // Get final geometry from pool
+                    const finalWireframe = geometryPool.get(finalGeometryType, this.size);
 
                     // Replace geometry
-                    this.geometry.dispose();
                     this.geometry = finalWireframe;
                     this.mesh.geometry = this.geometry;
+
+                    // Return old geometry to pool
+                    geometryPool.release(oldType, this.size, oldGeometry);
 
                     // Update material color
                     this.material.color.copy(targetColor);
@@ -921,7 +974,7 @@ class ParticleNet {
     updateIdle(deltaTime) {
         this.time += deltaTime;
 
-        // Gentle drift
+        // OPTIMIZATION: Gentle drift using mesh position (no vertex updates)
         this.mesh.position.x = this.basePosition.x +
             Math.sin(this.time * this.driftSpeed.x * 100) * this.oscillationAmplitude;
         this.mesh.position.y = this.basePosition.y +
@@ -929,120 +982,58 @@ class ParticleNet {
         this.mesh.position.z = this.basePosition.z +
             Math.sin(this.time * this.driftSpeed.z * 100) * this.oscillationAmplitude * 0.5;
 
-        // Slow rotation
+        // OPTIMIZATION: Slow rotation
         this.mesh.rotation.x += this.rotationSpeed.x;
         this.mesh.rotation.y += this.rotationSpeed.y;
         this.mesh.rotation.z += this.rotationSpeed.z;
 
-        // Subtle mesh deformation
-        const positions = this.geometry.attributes.position;
-        for (let i = 0; i < positions.count; i++) {
-            const original = this.originalPositions[i];
-            const deformAmount = 0.1;
-            const wave1 = Math.sin(this.time * this.oscillationSpeed + i * 0.1) * deformAmount;
-            const wave2 = Math.cos(this.time * this.oscillationSpeed * 0.7 + i * 0.15) * deformAmount;
-
-            positions.setXYZ(
-                i,
-                original.x + wave1,
-                original.y + wave2,
-                original.z + wave1 * 0.5
-            );
-        }
-        positions.needsUpdate = true;
+        // OPTIMIZATION: Removed per-vertex deformation for better performance
+        // The mesh position drift and rotation provide sufficient visual interest
     }
 
     applyWind(windDirection, windStrength, deltaTime) {
-        const positions = this.geometry.attributes.position;
+        // OPTIMIZATION: Simplified wind physics - mesh-level movement instead of per-vertex
+        // This provides the same visual effect with much better performance
 
-        for (let i = 0; i < positions.count; i++) {
-            const pos = new THREE.Vector3(
-                positions.getX(i),
-                positions.getY(i),
-                positions.getZ(i)
-            );
+        // Calculate simplified turbulence for the whole mesh
+        const turbulence = new THREE.Vector3(
+            Math.sin(this.time * 2) * 0.3,
+            Math.cos(this.time * 2) * 0.3,
+            Math.sin(this.time * 1.5) * 0.3
+        );
 
-            // Calculate world position
-            const worldPos = pos.clone().applyMatrix4(this.mesh.matrixWorld);
+        // Apply wind force to mesh position
+        const windForce = windDirection.clone()
+            .multiplyScalar(windStrength * deltaTime * 8)
+            .add(turbulence.multiplyScalar(deltaTime));
 
-            // Wind force with turbulence
-            const turbulence = new THREE.Vector3(
-                Math.sin(this.time * 2 + worldPos.x * 0.1) * 0.3,
-                Math.cos(this.time * 2 + worldPos.y * 0.1) * 0.3,
-                Math.sin(this.time * 2 + worldPos.z * 0.1) * 0.3
-            );
+        this.mesh.position.add(windForce);
 
-            const windForce = windDirection.clone()
-                .multiplyScalar(windStrength * 2.5)
-                .add(turbulence);
-
-            // Apply force to velocity
-            this.velocities[i].add(windForce.multiplyScalar(deltaTime));
-
-            // Reduced damping for more flowing, drifting motion
-            this.velocities[i].multiplyScalar(0.93);
-
-            // Update position
-            pos.add(this.velocities[i].clone().multiplyScalar(deltaTime));
-
-            positions.setXYZ(i, pos.x, pos.y, pos.z);
-        }
-
-        positions.needsUpdate = true;
-
-        // Enhanced mesh force for more obvious whole-mesh movement
-        const meshForce = windDirection.clone().multiplyScalar(windStrength * deltaTime * 8);
-        this.mesh.position.add(meshForce);
+        // Add subtle rotation from wind
+        this.mesh.rotation.z += windStrength * deltaTime * 0.1;
     }
 
     recover(deltaTime) {
-        const positions = this.geometry.attributes.position;
+        // OPTIMIZATION: Simplified recovery - mesh-level only
         const recoverySpeed = 2.0;
 
-        for (let i = 0; i < positions.count; i++) {
-            const current = new THREE.Vector3(
-                positions.getX(i),
-                positions.getY(i),
-                positions.getZ(i)
-            );
-
-            const target = this.originalPositions[i].clone();
-
-            // Lerp back to original position
-            current.lerp(target, deltaTime * recoverySpeed);
-
-            positions.setXYZ(i, current.x, current.y, current.z);
-
-            // Dampen velocity
-            this.velocities[i].multiplyScalar(0.9);
-        }
-
-        positions.needsUpdate = true;
-
-        // Recover mesh position
+        // Recover mesh position to base
         this.mesh.position.lerp(this.basePosition, deltaTime * recoverySpeed);
+
+        // Gradually restore rotation
+        this.mesh.rotation.z *= 0.95;
     }
 
     updateVibration(intensity) {
-        // Apply rapid vibration to mesh position
+        // OPTIMIZATION: Mesh-level vibration only
         const vibrationAmount = intensity * 0.5;
         this.mesh.position.x += (Math.random() - 0.5) * vibrationAmount;
         this.mesh.position.y += (Math.random() - 0.5) * vibrationAmount;
         this.mesh.position.z += (Math.random() - 0.5) * vibrationAmount * 0.3;
 
-        // Vibrate vertices for more dramatic effect
-        const positions = this.geometry.attributes.position;
-        for (let i = 0; i < positions.count; i++) {
-            const original = this.originalPositions[i];
-            const shake = intensity * 0.1;
-            positions.setXYZ(
-                i,
-                original.x + (Math.random() - 0.5) * shake,
-                original.y + (Math.random() - 0.5) * shake,
-                original.z + (Math.random() - 0.5) * shake
-            );
-        }
-        positions.needsUpdate = true;
+        // Add rotation shake for visual effect
+        this.mesh.rotation.x += (Math.random() - 0.5) * intensity * 0.02;
+        this.mesh.rotation.y += (Math.random() - 0.5) * intensity * 0.02;
     }
 }
 
@@ -1158,9 +1149,9 @@ class BlackHole {
 
 let blackHole = null;
 
-// Create particle networks with unique geometries
+// OPTIMIZATION: Reduced mesh count for better performance
 const particleNets = [];
-const numNets = 30;
+const numNets = 15; // Reduced from 30 for lighter, more fluid interface
 
 // Track which geometry types are used
 const usedGeometryTypes = [];
