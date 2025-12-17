@@ -1270,22 +1270,12 @@ document.addEventListener('click', (event) => {
                         meshId: particleNet.meshId
                     });
 
-                    // Normal mesh interaction
-                    if (!particleNet.hasBeenClicked) {
-                        // First click: Apply both color and geometry change
-                        const newColor = getRandomColor();
-                        particleNet.morphToNewShape(null, newColor);
-                        particleNet.hasBeenClicked = true;
+                    // INTERACTION: Every click generates fresh color + shape combination
+                    const newColor = getRandomColor();
+                    particleNet.morphToNewShape(null, newColor);
 
-                        // Play click sound
-                        audioSystem.playClickSound();
-                    } else {
-                        // Subsequent clicks: Only change geometry, keep current color
-                        particleNet.morphToNewShape(null, particleNet.currentColor);
-
-                        // Play click sound
-                        audioSystem.playClickSound();
-                    }
+                    // Play click sound
+                    audioSystem.playClickSound();
                 }
             }
         }
